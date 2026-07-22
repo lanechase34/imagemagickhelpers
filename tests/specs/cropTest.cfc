@@ -16,7 +16,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Crops a jpg image to exact target dimensions', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.jpg';
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
@@ -32,7 +32,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Crops a png image, scaling to cover and trimming overflow from the center when the aspect ratio differs', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.png';
+                var outputPath = tempDir & '/' & createUUID() & '.png';
 
                 imageService.crop(
                     path       = expandPath('/tests/resources/png_example.png'),
@@ -48,7 +48,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Crops a jpeg image', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.jpeg';
+                var outputPath = tempDir & '/' & createUUID() & '.jpeg';
 
                 imageService.crop(
                     path       = expandPath('/tests/resources/jpeg_example.jpeg'),
@@ -64,7 +64,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Crops a heic image', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.jpg';
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.crop(
                     path       = expandPath('/tests/resources/heic_example.heic'),
@@ -80,7 +80,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Upscales an image smaller than the target dimensions to exactly cover them', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.jpg';
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
@@ -98,7 +98,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for an empty path', () => {
                 expect(() => imageService.crop(
                     path       = '',
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     width      = 100,
                     height     = 100
                 )).toThrow('ImageMagick.InputValidationException');
@@ -107,7 +107,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for a path that does not exist', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/does_not_exist.jpg'),
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     width      = 100,
                     height     = 100
                 )).toThrow('ImageMagick.InputValidationException');
@@ -116,7 +116,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for a path containing a double-quote character', () => {
                 expect(() => imageService.crop(
                     path       = '#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp',
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     width      = 100,
                     height     = 100
                 )).toThrow('ImageMagick.InputValidationException');
@@ -134,7 +134,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for an outputPath containing a double-quote character', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '#expandPath(tempDir)#/out"; rm -rf /tmp.jpg',
+                    outputPath = '#tempDir#/out"; rm -rf /tmp.jpg',
                     width      = 100,
                     height     = 100
                 )).toThrow('ImageMagick.InputValidationException');
@@ -143,7 +143,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for a non-positive width', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     width      = 0,
                     height     = 100
                 )).toThrow('ImageMagick.InputValidationException');
@@ -152,7 +152,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for a non-positive height', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     width      = 100,
                     height     = 0
                 )).toThrow('ImageMagick.InputValidationException');
@@ -161,7 +161,7 @@ component extends="tests.resources.baseTest" {
             it('Throws when ImageMagick fails to produce the output file', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = expandPath(tempDir) & '/does_not_exist_subdir/out.jpg',
+                    outputPath = tempDir & '/does_not_exist_subdir/out.jpg',
                     width      = 100,
                     height     = 100
                 )).toThrow('ImageMagick.CropException');

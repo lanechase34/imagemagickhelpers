@@ -27,7 +27,7 @@ component extends="coldbox.system.testing.BaseTestCase" appMapping="root" {
      * Creates a fresh, empty directory under tempDir for a single test to resize into
      */
     public string function newDir() {
-        var dir = expandPath(tempDir) & '/' & createUUID();
+        var dir = tempDir & '/' & createUUID();
         directoryCreate(dir);
         return dir;
     }

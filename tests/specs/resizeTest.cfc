@@ -121,7 +121,7 @@ component extends="tests.resources.baseTest" {
             it('Throws when an output resizeDir does not exist', () => {
                 expect(() => imageService.resize(
                     path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: expandPath(tempDir) & '/does_not_exist_' & createUUID(), width: 100}]
+                    outputs = [{resizeDir: tempDir & '/does_not_exist_' & createUUID(), width: 100}]
                 )).toThrow('ImageMagick.InputValidationException');
             });
 

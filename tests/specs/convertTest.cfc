@@ -16,7 +16,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Converts an image, leaving dimensions unchanged when under the resize bound', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.jpg';
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.convert(path = expandPath('/tests/resources/jpg_example.jpg'), outputPath = outputPath);
 
@@ -27,7 +27,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Shrinks an image that exceeds the resize bound, preserving aspect ratio', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.png';
+                var outputPath = tempDir & '/' & createUUID() & '.png';
 
                 imageService.convert(
                     path       = expandPath('/tests/resources/png_example.png'),
@@ -42,7 +42,7 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Converts with a custom quality', () => {
-                var outputPath = expandPath(tempDir) & '/' & createUUID() & '.jpg';
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.convert(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
@@ -54,20 +54,20 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Throws for an empty path', () => {
-                expect(() => imageService.convert(path = '', outputPath = expandPath(tempDir) & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
+                expect(() => imageService.convert(path = '', outputPath = tempDir & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
             });
 
             it('Throws for a path that does not exist', () => {
                 expect(() => imageService.convert(
                     path       = expandPath('/tests/resources/does_not_exist.jpg'),
-                    outputPath = expandPath(tempDir) & '/out.jpg'
+                    outputPath = tempDir & '/out.jpg'
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
             it('Throws for a path containing a double-quote character', () => {
                 expect(() => imageService.convert(
                     path       = '#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp',
-                    outputPath = expandPath(tempDir) & '/out.jpg'
+                    outputPath = tempDir & '/out.jpg'
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
@@ -78,14 +78,14 @@ component extends="tests.resources.baseTest" {
             it('Throws for an outputPath containing a double-quote character', () => {
                 expect(() => imageService.convert(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '#expandPath(tempDir)#/out"; rm -rf /tmp.jpg'
+                    outputPath = '#tempDir#/out"; rm -rf /tmp.jpg'
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
             it('Throws for a quality outside the 0-100 range', () => {
                 expect(() => imageService.convert(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     quality    = 101
                 )).toThrow('ImageMagick.InputValidationException');
             });
@@ -93,7 +93,7 @@ component extends="tests.resources.baseTest" {
             it('Throws for a non-positive resize', () => {
                 expect(() => imageService.convert(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = expandPath(tempDir) & '/out.jpg',
+                    outputPath = tempDir & '/out.jpg',
                     resize     = 0
                 )).toThrow('ImageMagick.InputValidationException');
             });
@@ -101,7 +101,7 @@ component extends="tests.resources.baseTest" {
             it('Throws when ImageMagick fails to produce the output file', () => {
                 expect(() => imageService.convert(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = expandPath(tempDir) & '/does_not_exist_subdir/out.jpg'
+                    outputPath = tempDir & '/does_not_exist_subdir/out.jpg'
                 )).toThrow('ImageMagick.ConversionException');
             });
         });

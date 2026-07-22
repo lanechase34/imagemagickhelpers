@@ -19,6 +19,7 @@ component {
 	 */
     function configure() {
         settings = {
+            cfmlEngine        : getCFMLEngine(),
             imageMagickPath   : getSystemSetting('IMAGEMAGICKPATH', ''), // Absolute path to the ImageMagick "magick" executable
             imageMagickTimeout: 30 // Max seconds cfexecute will wait on an ImageMagick call before timing out
         };
@@ -56,6 +57,7 @@ component {
         binder
             .map(alias = ['Helpers@ImageMagick', '@ImageMagick'], force = true)
             .to('imagemagickhelpers.models.services.image')
+            .initArg(name = 'cfmlEngine', value = settings.cfmlEngine)
             .initArg(name = 'imageMagickPath', value = settings.imageMagickPath)
             .initArg(name = 'imageMagickTimeout', value = settings.imageMagickTimeout);
 
@@ -70,6 +72,22 @@ component {
 	 * Fired when the module is unregistered and unloaded
 	 */
     function onUnload() {
+    }
+
+    /**
+     * Get the current CFML engine
+     */
+    function getCFMLEngine() {
+        if(server.keyExists('lucee')) {
+            return 'lucee';
+        }
+        else if(server.keyExists('boxlang')) {
+            return 'boxlang';
+        }
+        else if(server.keyExists('coldfusion')) {
+            return 'coldfusion';
+        }
+        throw('Invalid CFML engine detected');
     }
 
 }

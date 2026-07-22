@@ -4,18 +4,41 @@ component singleton accessors="true" hint="Service layer for interacting with Im
     property name="validationManager" inject="ValidationManager@cbvalidation";
     property name="constraints"       inject="Constraints@ImageMagickHelpers";
 
+    property name="cfmlEngine"         type="string";
+    property name="extToMime"          type="struct";
     property name="imageMagickPath"    type="string";
     property name="imageMagickTimeout" type="numeric";
 
     /**
      * Creates a new ImageMagick service
      *
+     * @cfmlEngine         The current cfml engine (lucee/coldfusion/boxlang)
      * @imageMagickPath    Absolute path to the ImageMagick "magick" executable
      * @imageMagickTimeout Max seconds cfexecute will wait on an ImageMagick call before timing out
      *
      * @return imagemagickhelpers.models.services.image
      */
-    public image function init(required string imageMagickPath, required numeric imageMagickTimeout) {
+    public image function init(
+        required string cfmlEngine,
+        required string imageMagickPath,
+        required numeric imageMagickTimeout
+    ) {
+        variables.cfmlEngine = arguments.cfmlEngine;
+        variables.extToMime  = {
+            png : 'image/png',
+            jpg : 'image/jpeg',
+            jpeg: 'image/jpeg',
+            webp: 'image/webp',
+            heic: 'image/heic',
+            heif: 'image/heif',
+            gif : 'image/gif',
+            bmp : 'image/bmp',
+            tif : 'image/tiff',
+            tiff: 'image/tiff',
+            svg : 'image/svg+xml',
+            avif: 'image/avif',
+            ico : 'image/vnd.microsoft.icon'
+        };
         variables.imageMagickPath    = arguments.imageMagickPath;
         variables.imageMagickTimeout = arguments.imageMagickTimeout;
         return this;
@@ -415,12 +438,30 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
         // Attempt file upload to temp directory
         try {
-            var upload = fileUpload(
-                destination  = getTempDirectory(),
-                fileField    = arguments.formField,
-                accept       = 'image/png,image/jpeg,image/webp,image/heic',
-                nameConflict = 'makeUnique',
-                strict       = true
+            var uploadArgs = {
+                destination: getTempDirectory(),
+                fileField  : arguments.formField,
+                strict     : true
+            };
+
+            var mimeTypes = listToArray(arguments.extensions, ',')
+                .map((ext) => getExtToMime()[ext.trim().lcase()])
+                .toList(',');
+
+            if(getCfmlEngine() == 'lucee') {
+                uploadArgs.accept     = mimeTypes;
+                uploadArgs.onConflict = 'makeUnique';
+            }
+            else {
+                uploadArgs.mimeType     = mimeTypes;
+                uploadArgs.nameConflict = 'makeUnique';
+            }
+
+            cffile(
+                action              = "upload",
+                attributeCollection = uploadArgs,
+                accept              = mimeTypes,
+                result              = "upload"
             );
         }
         catch(any e) {
