@@ -78,11 +78,11 @@ component {
      * Get the current CFML engine
      */
     function getCFMLEngine() {
-        if(server.keyExists('lucee')) {
-            return 'lucee';
-        }
-        else if(server.keyExists('boxlang')) {
+        if(server.keyExists('boxlang')) {
             return 'boxlang';
+        }
+        else if(server.keyExists('lucee')) {
+            return 'lucee';
         }
         else if(server.keyExists('coldfusion')) {
             return 'coldfusion';

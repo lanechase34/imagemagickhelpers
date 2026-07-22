@@ -46,6 +46,8 @@ jobs:
 
       - name: Install ImageMagick
         run: |
+          set -euo pipefail
+
           # Pull the official portable ImageMagick 7 AppImage and extract it
           sudo apt-get update
           sudo apt-get install -y libfontconfig1 libfreetype6 libx11-6 libharfbuzz0b libfribidi0
@@ -59,6 +61,16 @@ jobs:
           sudo ln -s /usr/local/lib/magick-appimage/AppRun /usr/local/bin/magick
 
           echo "IMAGEMAGICKPATH=$(command -v magick)" >> "$GITHUB_ENV"
+
+          # Fail fast with a clear message if the extracted AppImage is missing delegate
+          # coders, rather than letting it surface later as cryptic per-test failures
+          for FORMAT in JPEG PNG; do
+            if ! magick -list format | grep -qi "^\s*${FORMAT}"; then
+              echo "::error::ImageMagick install is missing the ${FORMAT} delegate coder - the AppImage extraction likely failed or was truncated"
+              magick -list format || true
+              exit 1
+            fi
+          done
 
       - name: Setup Environment For Testing Process
         run: |

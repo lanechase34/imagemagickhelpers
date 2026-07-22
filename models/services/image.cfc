@@ -335,10 +335,13 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      * @throws ImageMagick.ResizeException          When ImageMagick fails to produce one of the resized outputs
      */
     public array function resize(required string path, required array outputs) {
+        // Normalize before validating so fileExistsValidator checks the same path used to build outputs below
+        arguments.path = arguments.path.replace('\', '/', 'all');
+
         validateArgs('resize', arguments);
 
         // Extract the filename
-        var normalizedPath = arguments.path.replace('\', '/', 'all');
+        var normalizedPath = arguments.path;
         var fileName       = listLast(normalizedPath, '/');
 
         // Build every output's geometry string and destination path up front so we fail before resizing anything
