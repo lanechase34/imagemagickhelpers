@@ -114,7 +114,7 @@ component singleton accessors="true" hint="Service layer for interacting with Im
         try {
             cfexecute(
                 name          = getImageMagickPath(),
-                arguments     = "identify ""#arguments.path#""",
+                arguments     = ["identify", arguments.path],
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -154,8 +154,13 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
         try {
             cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = "identify -format ""%wx%h"" ""#arguments.path#[0]""",
+                name      = getImageMagickPath(),
+                arguments = [
+                    "identify",
+                    "-format",
+                    "%wx%h",
+                    "#arguments.path#[0]"
+                ],
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -204,8 +209,17 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
         try {
             cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = "convert -strip -quality #arguments.quality# ""#arguments.path#"" -resize ""#arguments.resize#x#arguments.resize#>"" ""#arguments.outputPath#""",
+                name      = getImageMagickPath(),
+                arguments = [
+                    "convert",
+                    "-strip",
+                    "-quality",
+                    "#arguments.quality#",
+                    arguments.path,
+                    "-resize",
+                    "#arguments.resize#x#arguments.resize#>",
+                    arguments.outputPath
+                ],
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -253,8 +267,19 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
         try {
             cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = "convert -strip ""#arguments.path#"" -resize ""#arguments.width#x#arguments.height#^"" -gravity center -extent ""#arguments.width#x#arguments.height#"" ""#arguments.outputPath#""",
+                name      = getImageMagickPath(),
+                arguments = [
+                    "convert",
+                    "-strip",
+                    arguments.path,
+                    "-resize",
+                    "#arguments.width#x#arguments.height#^",
+                    "-gravity",
+                    "center",
+                    "-extent",
+                    "#arguments.width#x#arguments.height#",
+                    arguments.outputPath
+                ],
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -296,8 +321,13 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
         try {
             cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = "convert ""#arguments.path#"" -auto-orient ""#arguments.outputPath#""",
+                name      = getImageMagickPath(),
+                arguments = [
+                    "convert",
+                    arguments.path,
+                    "-auto-orient",
+                    arguments.outputPath
+                ],
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -355,8 +385,15 @@ component singleton accessors="true" hint="Service layer for interacting with Im
                 var errorResult = '';
 
                 cfexecute(
-                    name          = getImageMagickPath(),
-                    arguments     = "convert -strip ""#normalizedPath#"" -resize ""#prepared.geometry#"" ""#prepared.outputPath#""",
+                    name      = getImageMagickPath(),
+                    arguments = [
+                        "convert",
+                        "-strip",
+                        normalizedPath,
+                        "-resize",
+                        prepared.geometry,
+                        prepared.outputPath
+                    ],
                     variable      = "local.result",
                     errorVariable = "local.errorResult",
                     timeout       = getImageMagickTimeout()

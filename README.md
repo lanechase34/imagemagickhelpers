@@ -13,8 +13,6 @@ Helper service layer for interacting with ImageMagick in CFML.
 
 Ensure you either set the `IMAGEMAGICKPATH` in your .env to the path of the magick executable or in your ColdBox settings structure
 
-Ex:
-
 ```
 IMAGEMAGICKPATH=/usr/bin/magick
 ```
@@ -24,8 +22,6 @@ Check this is the correct path and your CFML server can execute this by running 
 ## Usage
 
 Instantiate the objects via the wirebox DSL `Helpers@ImageMagick`
-
-Ex:
 
 ```
 property name="imageService" inject="Helpers@ImageMagick";
