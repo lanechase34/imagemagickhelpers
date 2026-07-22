@@ -1,47 +1,75 @@
-/**
- * Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
- * www.ortussolutions.com
- * ---
- */
 component {
 
-	// Module Properties
-	this.title 				= "@MODULE_NAME@";
-	this.author 			= "Ortus Solutions";
-	this.webURL 			= "https://www.ortussolutions.com";
-	this.description 		= "@MODULE_DESCRIPTION@";
-	this.version 			= "@build.version@+@build.number@";
+    this.title       = 'Image Magick Helpers';
+    this.author      = 'Chase Lane';
+    this.webURL      = 'https://github.com/lanechase34/imagemagickhelpers';
+    this.description = 'Helpers for interacting with ImageMagick';
 
-	// Model Namespace
-	this.modelNamespace		= "@MODULE_SLUG@";
+    // Model Namespace
+    this.modelNamespace = 'ImageMagickHelpers';
 
-	// CF Mapping
-	this.cfmapping			= "@MODULE_SLUG@";
+    // CF Mapping
+    this.cfmapping = 'ImageMagickHelpers';
 
-	// Dependencies
-	this.dependencies 		= [];
+    // Dependencies - modules that must be loaded and activated before this one
+    this.dependencies = ['cbvalidation'];
 
-	/**
+    /**
 	 * Configure Module
 	 */
-	function configure(){
-		settings = {
+    function configure() {
+        settings = {
+            imageMagickPath   : getSystemSetting('IMAGEMAGICKPATH', ''), // Absolute path to the ImageMagick "magick" executable
+            imageMagickTimeout: 30 // Max seconds cfexecute will wait on an ImageMagick call before timing out
+        };
 
-		};
-	}
+        // Add the image logger
+        logBox = {
+            appenders: {
+                appLog: {
+                    class     : 'coldbox.system.logging.appenders.RollingFileAppender',
+                    properties: {
+                        filePath       : '/logs',
+                        filename       : 'app',
+                        autoExpand     : false,
+                        fileMaxSize    : 10000,
+                        fileMaxArchives: 10,
+                        async          : true
+                    }
+                }
+            },
+            categories: {
+                Image: {
+                    levelMin : 'FATAL',
+                    levelMax : 'WARN',
+                    appenders: 'appLog'
+                }
+            }
+        };
+    }
 
-	/**
+    /**
 	 * Fired when the module is registered and activated.
 	 */
-	function onLoad(){
+    function onLoad() {
+        // Injectable service layer
+        binder
+            .map(alias = ['Helpers@ImageMagick', '@ImageMagick'], force = true)
+            .to('imagemagickhelpers.models.services.image')
+            .initArg(name = 'imageMagickPath', value = settings.imageMagickPath)
+            .initArg(name = 'imageMagickTimeout', value = settings.imageMagickTimeout);
 
-	}
+        // Custom cbvalidation validators - used internally by service layer
+        binder.map('fileExistsValidator@ImageMagick').to('imagemagickhelpers.models.validators.fileexists');
+        binder.map('directoryExistsValidator@ImageMagick').to('imagemagickhelpers.models.validators.directoryexists');
+        binder.map('noQuotesValidator@ImageMagick').to('imagemagickhelpers.models.validators.noquotes');
+        binder.map('atLeastOneOfValidator@ImageMagick').to('imagemagickhelpers.models.validators.atleastoneof');
+    }
 
-	/**
+    /**
 	 * Fired when the module is unregistered and unloaded
 	 */
-	function onUnload(){
-
-	}
+    function onUnload() {
+    }
 
 }

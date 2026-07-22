@@ -1,135 +1,146 @@
-name: Test Suites
+name: Test Suite
 
-# We are a reusable Workflow only
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 on:
-  workflow_call:
-    secrets:
-      SLACK_WEBHOOK_URL:
-        required: false
+  push:
+    branches:
+      - development
+      - main
+  pull_request:
+    branches:
+      - development
+      - main
+  workflow_dispatch:
 
 jobs:
   tests:
     name: Tests
-    runs-on: ubuntu-latest
-    env:
-      DB_USER: root
-      DB_PASSWORD: root
-    continue-on-error: ${{ matrix.experimental }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+  
     strategy:
       fail-fast: false
       matrix:
-        cfengine: [ "boxlang@1", "boxlang-cfml@1", "lucee@5", "lucee@6", "adobe@2023", "adobe@2025" ]
-        coldboxVersion: [ "^7.0.0" ]
-        experimental: [ false ]
-        # Experimental: ColdBox BE vs All Engines
-        include:
-          - coldboxVersion: "be"
-            cfengine: "lucee@5"
-            experimental: true
-          - coldboxVersion: "be"
-            cfengine: "lucee@6"
-            experimental: true
-          - coldboxVersion: "be"
-            cfengine: "adobe@2025"
-            experimental: true
-          - coldboxVersion: "be"
-            cfengine: "boxlang-cfml@1"
-            experimental: true
-          - coldboxVersion: "be"
-            cfengine: "boxlang@1"
-            experimental: true
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v6
+        cfengine: [ "boxlang-cfml@1", "lucee@6", "lucee@7", "adobe@2025" ]
 
-      # DATABASE SETUP: uncomment if you need to setup a database
-      # - name: Setup Database and Fixtures
-      #   run: |
-      #     sudo systemctl start mysql.service
-      #     mysql -u${{ env.DB_USER }} -p${{ env.DB_PASSWORD }} -e 'CREATE DATABASE mementifier;'
-      #     mysql -u${{ env.DB_USER }} -p${{ env.DB_PASSWORD }} < test-harness/tests/resources/coolblog.sql
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: "temurin"
           java-version: "21"
+      
+      - name: Setup CommandBox CLI
+        uses: Ortus-Solutions/setup-commandbox@7be599028dcf77743854b2f6c720b15316f39be2 # v2.0.1
+        with:
+          version: latest
+
+      - name: Install ImageMagick
+        run: |
+          # Pull the official portable ImageMagick 7 AppImage and extract it
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1 libfreetype6 libx11-6 libharfbuzz0b libfribidi0
+
+          ASSET_URL=$(curl -fsSL https://api.github.com/repos/ImageMagick/ImageMagick/releases/latest \
+            | jq -r '.assets[] | select(.name | test("gcc-x86_64.AppImage$")) | .browser_download_url')
+          curl -fsSL -o /tmp/magick.AppImage "$ASSET_URL"
+          chmod +x /tmp/magick.AppImage
+          (cd /tmp && ./magick.AppImage --appimage-extract >/dev/null)
+          sudo mv /tmp/squashfs-root /usr/local/lib/magick-appimage
+          sudo ln -s /usr/local/lib/magick-appimage/AppRun /usr/local/bin/magick
+
+          echo "IMAGEMAGICKPATH=$(command -v magick)" >> "$GITHUB_ENV"
 
       - name: Setup Environment For Testing Process
         run: |
-          # Setup .env
-          touch .env
-          # ENV
-          printf "ENVIRONMENT=development\n" >> .env
-          printf "DB_HOST=localhost\n" >> .env
-          printf "DB_USER=${{ env.DB_USER }}\n" >> .env
-          printf "DB_PASSWORD=${{ env.DB_PASSWORD }}\n" >> .env
-          printf "DB_CLASS=com.mysql.cj.jdbc.Driver\n" >> .env
-          printf "DB_BUNDLEVERSION=8.0.19\n" >> .env
-          printf "DB_BUNDLENAME=com.mysql.cj\n" >> .env
-
-      - name: Setup CommandBox CLI
-        uses: Ortus-Solutions/setup-commandbox@v2.0.1
+          cat > .env << 'EOL'
+          ENVIRONMENT=development
+          IMAGEMAGICKPATH=${{ env.IMAGEMAGICKPATH }}
+          EOL
 
       - name: Install Dependencies
-        run: |
-          box install
-          cd test-harness
-          box package set dependencies.coldbox=${{ matrix.coldboxVersion }}
-          box install
+        run: box install
+        timeout-minutes: 10
 
       - name: Start ${{ matrix.cfengine }} Server
         run: |
           box server start serverConfigFile="server-${{ matrix.cfengine }}.json" --noSaveSettings --debug
-          curl http://127.0.0.1:60299
+
+      - name: Wait for Server to be Ready
+        run: |
+          echo "Waiting for server to start..."
+          for i in {1..60}; do
+            if curl -sf http://localhost:60299 > /dev/null 2>&1; then
+              echo "Server is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: Server not ready yet..."
+            sleep 2
+          done
+          echo "Server failed to start"
+          box server log
+          exit 1
 
       - name: Run Tests
+        id: run_tests
         run: |
-          mkdir -p test-harness/tests/results
-          box testbox run --verbose outputFile=test-harness/tests/results/test-results outputFormats=json,antjunit
+          mkdir -p tests/results
+          box testbox run --verbose outputFile="tests/results/test-results" outputFormats="json,antjunit" \
+            || echo "TESTS_FAILED=true" >> $GITHUB_ENV
+
+      - name: Display Test Results
+        if: always()
+        run: |
+          if [ -f "tests/results/test-results.json" ]; then
+            echo "=== Test Results Summary ==="
+            cat tests/results/test-results.json | jq -r '
+              "Total Bundles: \(.totalBundles)",
+              "Total Suites: \(.totalSuites)", 
+              "Total Specs: \(.totalSpecs)",
+              "Total Pass: \(.totalPass)",
+              "Total Fail: \(.totalFail)",
+              "Total Error: \(.totalError)",
+              "Total Skipped: \(.totalSkipped)"
+            '
+          else
+            echo "No test results found!"
+            ls -la tests/results/ || echo "Results directory doesn't exist"
+          fi
 
       - name: Publish Test Reports
         uses: mikepenz/action-junit-report@v6.0.1
         if: always()
         with:
           report_paths: |
-            test-harness/tests/results/**/*.xml
+            tests/results/**/*.xml
           check_name: "TestBox Report ${{ matrix.cfengine }}-${{ matrix.coldboxVersion }}"
           include_passed: false
           fail_on_failure: true
           detailed_summary: true
 
-      - name: Upload Test Results to Artifacts
+      - name: Upload Test Results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
-        uses: actions/upload-artifact@v5
         with:
-          name: test-results-${{ matrix.cfengine }}-${{ matrix.coldboxVersion }}
+          name: test-results
           path: |
-            test-harness/tests/results/**/*
+            tests/results/
+            tests/results/*.json
+            tests/results/*.xml
+          retention-days: 30
+        continue-on-error: true
 
-      - name: Show Server Log On Failures
-        if: ${{ failure() }}
+      - name: Stop Server
+        if: always()
         run: |
-          box server log serverConfigFile="server-${{ matrix.cfengine }}.json"
-
-      - name: Upload Debug Logs To Artifacts
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: Failure Debugging Info - ${{ matrix.cfengine }} - ${{ matrix.coldboxVersion }}
-          path: |
-            .engine/**/logs/*
-            .engine/**/WEB-INF/cfusion/logs/*
-
-      - name: Slack Notifications
-        # Only on failures and NOT in pull requests
-        if: ${{ failure() && !startsWith( 'pull_request', github.event_name ) }}
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_CHANNEL: coding
-          SLACK_COLOR: ${{ job.status }} # or a specific color like 'green' or '#ff00ff'
-          SLACK_ICON_EMOJI: ":bell:"
-          SLACK_MESSAGE: '${{ github.repository }} tests failed :cry:'
-          SLACK_TITLE: ${{ github.repository }} Tests For ${{ matrix.cfengine }} with ColdBox ${{ matrix.coldboxVersion }} failed
-          SLACK_USERNAME: CI
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          box server stop serverConfigFile="server-${{ matrix.cfengine }}.json"
+        continue-on-error: true

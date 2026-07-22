@@ -14,14 +14,16 @@ component {
 		variables.buildDir     = cwd & "/.tmp";
 		variables.apidDocsDir = variables.buildDir & "/apidocs";
 		variables.apiDocsURL   = "http://localhost:60299/apidocs/";
-		variables.testRunner   = "http://localhost:60299/tests/runner.cfm";
 
 		// Source Excludes Not Added to final binary
 		variables.excludes = [
 			"build",
+			"coldbox",
+			"modules",
+			"config",
 			"node-modules",
 			"resources",
-			"test-harness",
+			"tests",
 			"(package|package-lock).json",
 			"webpack.config.js",
 			"server-.*\.json",
@@ -45,14 +47,15 @@ component {
 		// Create Mappings
 		fileSystemUtil.createMapping(
 			"coldbox",
-			variables.cwd & "test-harness/coldbox"
+			variables.cwd & "/coldbox"
 		);
 
 		return this;
 	}
 
 	/**
-	 * Run the build process: test, build source, docs, checksums
+	 * Run the build process: build source, docs, checksums. Tests are expected to have already
+	 * passed as a separate CI step before this runs - this does not run or gate on tests itself.
 	 *
 	 * @projectName The project name used for resources and slugs
 	 * @version The version you are building
@@ -88,28 +91,6 @@ component {
 			.line()
 			.boldMagentaLine( "Build Process is done! Enjoy your build!" )
 			.toConsole();
-	}
-
-	/**
-	 * Run the test suites
-	 */
-	function runTests(){
-		// Tests First, if they fail then exit
-		print.blueLine( "Testing the package, please wait..." ).toConsole();
-
-		command( "testbox run" )
-			.params(
-				runner     = variables.testRunner,
-				verbose    = true,
-				outputFile = "#variables.cwd#/test-harness/results/test-results",
-				outputFormats="json,antjunit"
-			)
-			.run();
-
-		// Check Exit Code?
-		if ( shell.getExitCode() ) {
-			return error( "Cannot continue building, tests failed!" );
-		}
 	}
 
 	/**

@@ -28,6 +28,16 @@
 				"panel": "new"
 			},
 			"problemMatcher": []
-		}
+		},
+		{
+            "label": "Github Actions Tests",
+            "type": "shell",
+            "command": "act -W '.github/workflows/tests.yml' -P ubuntu-24.04=ghcr.io/catthehacker/ubuntu:act-24.04 --rm --pull=false",
+            "group": {
+                "kind": "test"
+            },
+            "detail": "Runs the ./github/workflows/tests.yml locally",
+            "isBackground": true
+        }
 	]
 }
