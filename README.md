@@ -11,7 +11,7 @@ Helper service layer for interacting with ImageMagick in CFML
 
 ## Installation
 
-Ensure you either set the `IMAGEMAGICKPATH` in your .env to the path of the magick executable or in your ColdBox settings structure
+Ensure you either set the `IMAGEMAGICKPATH` in your .env to the path of the magick executable **OR** in your ColdBox settings structure
 
 ```env
 IMAGEMAGICKPATH=/usr/bin/magick
@@ -21,7 +21,7 @@ Check this is the correct path and your CFML server can execute this by running 
 
 ## Usage
 
-Instantiate the objects via the wirebox DSL `Helpers@ImageMagick`
+Instantiate the helper service via the wirebox DSL `Helpers@ImageMagick`
 
 ```cfc
 property name="imageService" inject="Helpers@ImageMagick";
@@ -69,4 +69,4 @@ function uploadPhoto(event, rc, prc) {
 
 Every function validates its arguments and throws a typed `ImageMagick.*Exception` (e.g. `ImageMagick.ConversionException`, `ImageMagick.UploadValidationException`) on failure - wrap calls in `try`/`catch` where you need to handle those.
 
-For the full list of functions, their arguments, return values, and exceptions, see [docs/Functions.md](docs/functions.md).
+For the full list of functions, their arguments, return values, and exceptions, see [docs/functions.md](docs/functions.md).
