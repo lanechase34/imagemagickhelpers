@@ -6,6 +6,7 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
     property name="cfmlEngine"         type="string";
     property name="extToMime"          type="struct";
+    property name="extToFormat"        type="struct";
     property name="imageMagickPath"    type="string";
     property name="imageMagickTimeout" type="numeric";
 
@@ -38,6 +39,24 @@ component singleton accessors="true" hint="Service layer for interacting with Im
             svg : 'image/svg+xml',
             avif: 'image/avif',
             ico : 'image/vnd.microsoft.icon'
+        };
+
+        // Expect values of ImageMagicks "identify -format %m"
+        // Use to confirm the uploaded content is actually what the user claims
+        variables.extToFormat = {
+            png : 'PNG',
+            jpg : 'JPEG',
+            jpeg: 'JPEG',
+            webp: 'WEBP',
+            heic: 'HEIC',
+            heif: 'HEIF',
+            gif : 'GIF',
+            bmp : 'BMP',
+            tif : 'TIFF',
+            tiff: 'TIFF',
+            svg : 'SVG',
+            avif: 'AVIF',
+            ico : 'ICO'
         };
         variables.imageMagickPath    = arguments.imageMagickPath;
         variables.imageMagickTimeout = arguments.imageMagickTimeout;
@@ -98,23 +117,32 @@ component singleton accessors="true" hint="Service layer for interacting with Im
     }
 
     /**
-     * Uses ImageMagick identify to check whether path points to a valid, readable image
+     * Uses ImageMagick identify to check whether path points to a valid, readable image and report
+     * the coder/format (ex: PNG, JPEG, MVG) ImageMagick itself detected for its first frame, based on
+     * the file's actual content rather than its extension
      *
      * @path Full path to the image to check
+     *
+     * @return ImageMagick's uppercased format name for path
      *
      * @throws ImageMagick.InputValidationException When path is empty or does not exist
      * @throws ImageMagick.IdentifyException        When ImageMagick reports path is not a valid image
      */
-    public void function validIdentify(required string path) {
-        validateArgs('validIdentify', arguments);
+    public string function identify(required string path) {
+        validateArgs('identify', arguments);
 
         var result      = '';
         var errorResult = '';
 
         try {
             cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = ["identify", arguments.path],
+                name      = getImageMagickPath(),
+                arguments = [
+                    "identify",
+                    "-format",
+                    "%m",
+                    "#arguments.path#[0]"
+                ],
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -128,12 +156,14 @@ component singleton accessors="true" hint="Service layer for interacting with Im
             }
         }
         catch(any e) {
-            imageLog.error('Error validating identity of image | #e.message#');
+            imageLog.error('Error identifying image | #e.message#');
             throw(
                 type    = 'ImageMagick.IdentifyException',
                 message = '#arguments.path# is not a valid image | #e.message#'
             );
         }
+
+        return trim(result).ucase();
     }
 
     /**
@@ -511,9 +541,10 @@ component singleton accessors="true" hint="Service layer for interacting with Im
         // Get the uploaded temp path
         var tempPath = '#upload.serverdirectory#/#upload.serverfile#'.replace('\', '/', 'all');
 
-        // Check if valid image
+        // Check if valid image and get its actual detected format
+        var detectedFormat = '';
         try {
-            validIdentify(tempPath);
+            detectedFormat = identify(tempPath);
         }
         catch(any e) {
             fileDelete(tempPath);
@@ -526,6 +557,16 @@ component singleton accessors="true" hint="Service layer for interacting with Im
             throw(
                 type    = 'ImageMagick.UploadValidationException',
                 message = 'Invalid image upload: extension #upload.serverfileext# is not allowed'
+            );
+        }
+
+        // Confirm the format ImageMagick actually detected for the upload's content matches what its extension claims
+        var expectedFormat = getExtToFormat()[upload.serverfileext.lcase()];
+        if(detectedFormat != expectedFormat) {
+            fileDelete(tempPath);
+            throw(
+                type    = 'ImageMagick.UploadValidationException',
+                message = 'Invalid image upload: detected format #detectedFormat# does not match extension #upload.serverfileext#'
             );
         }
 

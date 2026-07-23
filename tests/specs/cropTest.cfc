@@ -140,6 +140,33 @@ component extends="tests.resources.baseTest" {
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
+            it('Throws for a path using a UNC network path', () => {
+                expect(() => imageService.crop(
+                    path       = '\\attacker.test\share\evil.jpg',
+                    outputPath = tempDir & '/out.jpg',
+                    width      = 100,
+                    height     = 100
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath starting with a pipe (ImageMagick PIPE coder command execution)', () => {
+                expect(() => imageService.crop(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = '|touch /tmp/pwned',
+                    width      = 100,
+                    height     = 100
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath using an ImageMagick coder/protocol prefix', () => {
+                expect(() => imageService.crop(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = 'https://attacker.test/exfil',
+                    width      = 100,
+                    height     = 100
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
             it('Throws for a non-positive width', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),

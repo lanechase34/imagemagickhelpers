@@ -66,6 +66,7 @@ component {
         binder.map('directoryExistsValidator@ImageMagick').to('imagemagickhelpers.models.validators.directoryexists');
         binder.map('noQuotesValidator@ImageMagick').to('imagemagickhelpers.models.validators.noquotes');
         binder.map('atLeastOneOfValidator@ImageMagick').to('imagemagickhelpers.models.validators.atleastoneof');
+        binder.map('safePathValidator@ImageMagick').to('imagemagickhelpers.models.validators.safepath');
     }
 
     /**

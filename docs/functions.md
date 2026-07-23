@@ -11,7 +11,7 @@ All functions validate their arguments before doing any work and throw `ImageMag
 ## Table of Contents
 
 - [verifyImageMagick()](#verifyimagemagick)
-- [validIdentify(path)](#valididentifypath)
+- [identify(path)](#identifypath)
 - [getDimensions(path)](#getdimensionspath)
 - [convert(path, outputPath, quality, resize)](#convertpath-outputpath-quality-resize)
 - [crop(path, outputPath, width, height)](#croppath-outputpath-width-height)
@@ -41,9 +41,9 @@ imageService.verifyImageMagick();
 
 ---
 
-## validIdentify(path)
+## identify(path)
 
-Runs ImageMagick `identify` against `path` to confirm the file is a real, readable image (not just a file with an image-like extension).
+Runs ImageMagick `identify` against `path` to confirm the file is a real, readable image (not just a file with an image-like extension) and returns the coder/format ImageMagick itself detected for its first frame - based on the file's actual content, not its extension.
 
 **Arguments**
 
@@ -51,7 +51,7 @@ Runs ImageMagick `identify` against `path` to confirm the file is a real, readab
 | ---- | ------ | -------- | ------------------------------- |
 | path | string | yes      | Full path to the image to check |
 
-**Returns:** nothing (`void`)
+**Returns:** string - ImageMagick's uppercased format name for `path` (ex: `'PNG'`, `'JPEG'`)
 
 **Throws**
 
@@ -61,7 +61,8 @@ Runs ImageMagick `identify` against `path` to confirm the file is a real, readab
 **Example**
 
 ```cfc
-imageService.validIdentify('/tmp/uploads/photo.jpg');
+var format = imageService.identify('/tmp/uploads/photo.jpg');
+// format = "JPEG"
 ```
 
 ---

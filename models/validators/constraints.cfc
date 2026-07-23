@@ -5,10 +5,15 @@ component singleton {
     variables.pathConstraint = {
         required                         : true,
         'fileExistsValidator@ImageMagick': {},
-        'noQuotesValidator@ImageMagick'  : {}
+        'noQuotesValidator@ImageMagick'  : {},
+        'safePathValidator@ImageMagick'  : {}
     };
 
-    variables.outputPathConstraint = {required: true, 'noQuotesValidator@ImageMagick': {}};
+    variables.outputPathConstraint = {
+        required                       : true,
+        'noQuotesValidator@ImageMagick': {},
+        'safePathValidator@ImageMagick': {}
+    };
 
     variables.positiveNumericConstraint = {
         required: true,
@@ -18,7 +23,7 @@ component singleton {
 
     // Rules defined by the function's name
     variables.rules = {
-        validIdentify: {path: variables.pathConstraint},
+        identify     : {path: variables.pathConstraint},
         getDimensions: {path: variables.pathConstraint},
         convert      : {
             path      : variables.pathConstraint,
@@ -45,7 +50,8 @@ component singleton {
                         resizeDir: {
                             required                              : true,
                             'directoryExistsValidator@ImageMagick': {},
-                            'noQuotesValidator@ImageMagick'       : {}
+                            'noQuotesValidator@ImageMagick'       : {},
+                            'safePathValidator@ImageMagick'       : {}
                         },
                         width: {
                             'atLeastOneOfValidator@ImageMagick': {otherField: 'height'},
@@ -69,7 +75,8 @@ component singleton {
                         uploadDir: {
                             required                              : true,
                             'directoryExistsValidator@ImageMagick': {},
-                            'noQuotesValidator@ImageMagick'       : {}
+                            'noQuotesValidator@ImageMagick'       : {},
+                            'safePathValidator@ImageMagick'       : {}
                         },
                         type: {required: true}
                     }

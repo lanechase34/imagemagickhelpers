@@ -12,7 +12,7 @@
     "shortDescription":"Helpers for interacting with ImageMagick",
     "slug":"ImageMagickHelpers",
     "type":"modules",
-    "keywords":"",
+    "keywords":"imagemagick,image,coldbox,images",
     "license":[
         {
             "type":"Apache2",
@@ -36,6 +36,8 @@
         "tests",
         "coldbox",
         "modules",
+        "config",
+        "build",
         "config",
         "/server*.json"
     ],

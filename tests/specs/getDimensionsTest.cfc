@@ -54,6 +54,18 @@ component extends="tests.resources.baseTest" {
             it('Throws for a path containing a double-quote character', () => {
                 expect(() => imageService.getDimensions('#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp')).toThrow('ImageMagick.InputValidationException');
             });
+
+            it('Throws for a path using a UNC network path', () => {
+                expect(() => imageService.getDimensions('\\attacker.test\share\evil.jpg')).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for a path starting with a pipe (ImageMagick PIPE coder command execution)', () => {
+                expect(() => imageService.getDimensions('|touch /tmp/pwned')).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws for a path using an ImageMagick coder/protocol prefix', () => {
+                expect(() => imageService.getDimensions('https://attacker.test/exfil')).toThrow('ImageMagick.InputValidationException');
+            });
         });
     }
 
