@@ -215,13 +215,14 @@ component singleton accessors="true" hint="Service layer for interacting with Im
     }
 
     /**
-     * Uses ImageMagick convert to strip metadata, adjust quality, and shrink-to-fit the source image, writing the result to outputPath
+     * Uses ImageMagick convert to adjust quality and shrink-to-fit the source image, writing the result to outputPath
      * Only shrinks the image if it exceeds the resize bound - images smaller than resize are left at their original dimensions
      *
      * @path       Full path to source image
      * @outputPath Full path to output file including extension
      * @quality    (Optional) 0-100 quality of image, defaults to 50
      * @resize     (Optional) Max width/height in pixels to shrink to, defaults to 1200
+     * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
      *
      * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 0 and 100, or resize is not a positive number
      * @throws ImageMagick.ConversionException      When ImageMagick fails to produce the converted output
@@ -230,26 +231,34 @@ component singleton accessors="true" hint="Service layer for interacting with Im
         required string path,
         required string outputPath,
         numeric quality = 50,
-        numeric resize  = 1200
+        numeric resize  = 1200,
+        boolean strip   = true
     ) {
         validateArgs('convert', arguments);
 
         var result      = '';
         var errorResult = '';
 
+        var cmdArgs = ['convert'];
+        if(arguments.strip) {
+            cmdArgs.append('-strip');
+        }
+        cmdArgs.append(
+            [
+                '-quality',
+                '#arguments.quality#',
+                arguments.path,
+                '-resize',
+                '#arguments.resize#x#arguments.resize#>',
+                arguments.outputPath
+            ],
+            true
+        );
+
         try {
             cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "convert",
-                    "-strip",
-                    "-quality",
-                    "#arguments.quality#",
-                    arguments.path,
-                    "-resize",
-                    "#arguments.resize#x#arguments.resize#>",
-                    arguments.outputPath
-                ],
+                name          = getImageMagickPath(),
+                arguments     = cmdArgs,
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -280,6 +289,7 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      * @outputPath Full path to output file including extension
      * @width      Target width in pixels
      * @height     Target height in pixels
+     * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
      *
      * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, or width/height is not a positive number
      * @throws ImageMagick.CropException            When ImageMagick fails to produce the cropped output
@@ -288,28 +298,36 @@ component singleton accessors="true" hint="Service layer for interacting with Im
         required string path,
         required string outputPath,
         required numeric width,
-        required numeric height
+        required numeric height,
+        boolean strip = true
     ) {
         validateArgs('crop', arguments);
 
         var result      = '';
         var errorResult = '';
 
+        var cmdArgs = ['convert'];
+        if(arguments.strip) {
+            cmdArgs.append('-strip');
+        }
+        cmdArgs.append(
+            [
+                arguments.path,
+                '-resize',
+                '#arguments.width#x#arguments.height#^',
+                '-gravity',
+                'center',
+                '-extent',
+                '#arguments.width#x#arguments.height#',
+                arguments.outputPath
+            ],
+            true
+        );
+
         try {
             cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "convert",
-                    "-strip",
-                    arguments.path,
-                    "-resize",
-                    "#arguments.width#x#arguments.height#^",
-                    "-gravity",
-                    "center",
-                    "-extent",
-                    "#arguments.width#x#arguments.height#",
-                    arguments.outputPath
-                ],
+                name          = getImageMagickPath(),
+                arguments     = cmdArgs,
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -388,13 +406,18 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      *
      * @path    Full path to source image
      * @outputs Array of structs of resize destination and width/height of resized image ex: [{resizeDir: '../', width: 100}, {resizeDir: '../', height: 200}, {resizeDir: '../', width: 100, height: 200}]
+     * @strip   (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
      *
      * @return Array of full paths to the successfully resized output files, in outputs order
      *
      * @throws ImageMagick.InputValidationException When path does not exist, outputs is empty, or an output entry is missing resizeDir, is missing both width and height, or has a non-positive width/height
      * @throws ImageMagick.ResizeException          When ImageMagick fails to produce one of the resized outputs
      */
-    public array function resize(required string path, required array outputs) {
+    public array function resize(
+        required string path,
+        required array outputs,
+        boolean strip = true
+    ) {
         // Normalize before validating so fileExistsValidator checks the same path used to build outputs below
         arguments.path = arguments.path.replace('\', '/', 'all');
 
@@ -403,6 +426,7 @@ component singleton accessors="true" hint="Service layer for interacting with Im
         // Extract the filename
         var normalizedPath = arguments.path;
         var fileName       = listLast(normalizedPath, '/');
+        var stripMetadata  = arguments.strip;
 
         // Build every output's geometry string and destination path up front so we fail before resizing anything
         var preparedOutputs = arguments.outputs.map((output) => buildResizeOutput(output, fileName));
@@ -414,16 +438,23 @@ component singleton accessors="true" hint="Service layer for interacting with Im
                 var result      = '';
                 var errorResult = '';
 
-                cfexecute(
-                    name      = getImageMagickPath(),
-                    arguments = [
-                        "convert",
-                        "-strip",
+                var cmdArgs = ['convert'];
+                if(stripMetadata) {
+                    cmdArgs.append('-strip');
+                }
+                cmdArgs.append(
+                    [
                         normalizedPath,
-                        "-resize",
+                        '-resize',
                         prepared.geometry,
                         prepared.outputPath
                     ],
+                    true
+                );
+
+                cfexecute(
+                    name          = getImageMagickPath(),
+                    arguments     = cmdArgs,
                     variable      = "local.result",
                     errorVariable = "local.errorResult",
                     timeout       = getImageMagickTimeout()
@@ -493,6 +524,7 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      * @formField  The form field the image was uploaded under
      * @outputs    Array of structs of upload destination and conversion type ex: [{uploadDir: uploadPath, type: 'webp'}]
      * @extensions (Optional) Comma-delimited list of allowed source file extensions, defaults to 'png,jpg,jpeg,webp,heic'
+     * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from each converted output, defaults to true
      *
      * @return Filename - the converted file name's UUID (without extension)
      *
@@ -502,7 +534,8 @@ component singleton accessors="true" hint="Service layer for interacting with Im
     public string function validateUpload(
         required string formField,
         required array outputs,
-        string extensions = 'png,jpg,jpeg,webp,heic'
+        string extensions = 'png,jpg,jpeg,webp,heic',
+        boolean strip     = true
     ) {
         validateArgs('validateUpload', arguments);
 
@@ -576,12 +609,17 @@ component singleton accessors="true" hint="Service layer for interacting with Im
         // For each output, attempt to convert and move to destination upload directory
         // Track what's been converted in case of failure
         var convertedPaths = [];
+        var stripMetadata  = arguments.strip;
         try {
             arguments.outputs.each((output) => {
                 var uploadDir  = output.uploadDir.replace('\', '/', 'all').reReplace('/$', '');
                 var outputPath = '#uploadDir#/#newName#.#output.type#';
 
-                convert(path = tempPath, outputPath = outputPath);
+                convert(
+                    path       = tempPath,
+                    outputPath = outputPath,
+                    strip      = stripMetadata
+                );
 
                 convertedPaths.append(outputPath);
             });

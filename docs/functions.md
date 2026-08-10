@@ -13,11 +13,11 @@ All functions validate their arguments before doing any work and throw `ImageMag
 - [verifyImageMagick()](#verifyimagemagick)
 - [identify(path)](#identifypath)
 - [getDimensions(path)](#getdimensionspath)
-- [convert(path, outputPath, quality, resize)](#convertpath-outputpath-quality-resize)
-- [crop(path, outputPath, width, height)](#croppath-outputpath-width-height)
+- [convert(path, outputPath, quality, resize, strip)](#convertpath-outputpath-quality-resize-strip)
+- [crop(path, outputPath, width, height, strip)](#croppath-outputpath-width-height-strip)
 - [autoOrient(path, outputPath)](#autoorientpath-outputpath)
-- [resize(path, outputs)](#resizepath-outputs)
-- [validateUpload(formField, outputs, extensions)](#validateuploadformfield-outputs-extensions)
+- [resize(path, outputs, strip)](#resizepath-outputs-strip)
+- [validateUpload(formField, outputs, extensions, strip)](#validateuploadformfield-outputs-extensions-strip)
 
 ---
 
@@ -93,18 +93,19 @@ var dimensions = imageService.getDimensions('/tmp/uploads/photo.jpg');
 
 ---
 
-## convert(path, outputPath, quality, resize)
+## convert(path, outputPath, quality, resize, strip)
 
-Strips metadata, adjusts quality, and shrink-to-fits the source image, writing the result to `outputPath`. The output format is determined by `outputPath`'s extension. Only shrinks the image if it exceeds `resize` - images already smaller than that bound are left at their original dimensions.
+Adjusts quality and shrink-to-fits the source image, writing the result to `outputPath`. The output format is determined by `outputPath`'s extension. Only shrinks the image if it exceeds `resize` - images already smaller than that bound are left at their original dimensions.
 
 **Arguments**
 
-| Name       | Type    | Required | Default | Description                                   |
-| ---------- | ------- | -------- | ------- | --------------------------------------------- |
-| path       | string  | yes      | -       | Full path to source image                     |
-| outputPath | string  | yes      | -       | Full path to output file, including extension |
-| quality    | numeric | no       | `50`    | 0-100 output quality                          |
-| resize     | numeric | no       | `1200`  | Max width/height in pixels to shrink to       |
+| Name       | Type    | Required | Default | Description                                                     |
+| ---------- | ------- | -------- | ------- | ----------------------------------------------------------------|
+| path       | string  | yes      | -       | Full path to source image                                       |
+| outputPath | string  | yes      | -       | Full path to output file, including extension                   |
+| quality    | numeric | no       | `50`    | 0-100 output quality                                             |
+| resize     | numeric | no       | `1200`  | Max width/height in pixels to shrink to                         |
+| strip      | boolean | no       | `true`  | Whether to strip metadata (EXIF, ICC profiles, etc) from the image |
 
 **Returns:** nothing (`void`)
 
@@ -126,18 +127,19 @@ imageService.convert(
 
 ---
 
-## crop(path, outputPath, width, height)
+## crop(path, outputPath, width, height, strip)
 
-Crops the source image to exact `width`x`height` dimensions: scales the image to fully cover the target box (preserving aspect ratio) then crops the overflow from the center. Unlike [`resize()`](#resizepath-outputs)'s forced-dimensions mode, this never distorts the image.
+Crops the source image to exact `width`x`height` dimensions: scales the image to fully cover the target box (preserving aspect ratio) then crops the overflow from the center. Unlike [`resize()`](#resizepath-outputs-strip)'s forced-dimensions mode, this never distorts the image.
 
 **Arguments**
 
-| Name       | Type    | Required | Description                                   |
-| ---------- | ------- | -------- | --------------------------------------------- |
-| path       | string  | yes      | Full path to source image                     |
-| outputPath | string  | yes      | Full path to output file, including extension |
-| width      | numeric | yes      | Target width in pixels                        |
-| height     | numeric | yes      | Target height in pixels                       |
+| Name       | Type    | Required | Default | Description                                                     |
+| ---------- | ------- | -------- | ------- | ----------------------------------------------------------------|
+| path       | string  | yes      | -       | Full path to source image                                       |
+| outputPath | string  | yes      | -       | Full path to output file, including extension                   |
+| width      | numeric | yes      | -       | Target width in pixels                                          |
+| height     | numeric | yes      | -       | Target height in pixels                                         |
+| strip      | boolean | no       | `true`  | Whether to strip metadata (EXIF, ICC profiles, etc) from the image |
 
 **Returns:** nothing (`void`)
 
@@ -188,16 +190,17 @@ imageService.autoOrient(
 
 ---
 
-## resize(path, outputs)
+## resize(path, outputs, strip)
 
 Resizes the source image to one or more output sizes in a single call. If both `width` and `height` are given for an output, the image is forced to those exact dimensions (aspect ratio ignored). If only one is given, the image is scaled to that dimension with aspect ratio preserved. Each output's destination filename matches the source filename, placed in that output's `resizeDir`. If a resized file already exists at the destination, it is intentionally overwritten. If any output fails, all outputs already resized in this call are deleted before the exception is thrown.
 
 **Arguments**
 
-| Name    | Type   | Required | Description                                                                                                                                                           |
-| ------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| path    | string | yes      | Full path to source image                                                                                                                                             |
-| outputs | array  | yes      | Array of structs (1-10), each `{resizeDir: string, width: numeric, height: numeric}`. `resizeDir` is required; at least one of `width`/`height` is required per entry |
+| Name    | Type    | Required | Default | Description                                                                                                                                                           |
+| ------- | ------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| path    | string  | yes      | -       | Full path to source image                                                                                                                                             |
+| outputs | array   | yes      | -       | Array of structs (1-10), each `{resizeDir: string, width: numeric, height: numeric}`. `resizeDir` is required; at least one of `width`/`height` is required per entry |
+| strip   | boolean | no       | `true`  | Whether to strip metadata (EXIF, ICC profiles, etc) from each resized output                                                                                          |
 
 **Returns:** array of strings - full paths to the successfully resized output files, in `outputs` order
 
@@ -226,17 +229,18 @@ var resizedPaths = imageService.resize(
 
 ---
 
-## validateUpload(formField, outputs, extensions)
+## validateUpload(formField, outputs, extensions, strip)
 
-Handles an entire image upload flow in one call from within a handler: uploads the file from `formField` to a temp directory, verifies it's a genuinely valid image (not just a spoofed extension), checks its extension against `extensions`, then converts it to each requested output type/directory via [`convert()`](#convertpath-outputpath-quality-resize) using a newly generated UUID as the filename. The temp upload is always cleaned up. If any output fails to convert, all outputs already converted in this call are deleted before the exception is thrown.
+Handles an entire image upload flow in one call from within a handler: uploads the file from `formField` to a temp directory, verifies it's a genuinely valid image (not just a spoofed extension), checks its extension against `extensions`, then converts it to each requested output type/directory via [`convert()`](#convertpath-outputpath-quality-resize-strip) using a newly generated UUID as the filename. The temp upload is always cleaned up. If any output fails to convert, all outputs already converted in this call are deleted before the exception is thrown.
 
 **Arguments**
 
-| Name       | Type   | Required | Default                    | Description                                                                                                             |
-| ---------- | ------ | -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| formField  | string | yes      | -                          | The form field name the image was uploaded under                                                                        |
-| outputs    | array  | yes      | -                          | Array of structs (1-10), each `{uploadDir: string, type: string}` - `type` is the output extension (e.g. `webp`, `jpg`) |
-| extensions | string | no       | `'png,jpg,jpeg,webp,heic'` | Comma-delimited list of allowed source file extensions                                                                  |
+| Name       | Type    | Required | Default                    | Description                                                                                                             |
+| ---------- | ------- | -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| formField  | string  | yes      | -                          | The form field name the image was uploaded under                                                                        |
+| outputs    | array   | yes      | -                          | Array of structs (1-10), each `{uploadDir: string, type: string}` - `type` is the output extension (e.g. `webp`, `jpg`) |
+| extensions | string  | no       | `'png,jpg,jpeg,webp,heic'` | Comma-delimited list of allowed source file extensions                                                                  |
+| strip      | boolean | no       | `true`                     | Whether to strip metadata (EXIF, ICC profiles, etc) from each converted output. Set `false` to preserve EXIF/GPS/ICC data |
 
 **Returns:** string - the converted files' shared UUID filename, without extension. Combine with each output's `uploadDir`/`type` to get the full path.
 
@@ -262,5 +266,14 @@ function uploadPhoto(event, rc, prc) {
     // fileName = "3f2a9c1e4b7d4a6c9e1f2a3b4c5d6e7f"
     // -> /var/www/images/original/3f2a9c1e4b7d4a6c9e1f2a3b4c5d6e7f.jpg
     // -> /var/www/images/webp/3f2a9c1e4b7d4a6c9e1f2a3b4c5d6e7f.webp
+}
+
+// preserve EXIF/GPS/ICC metadata on the converted outputs instead of stripping it
+function uploadPhotoWithMetadata(event, rc, prc) {
+    var fileName = imageService.validateUpload(
+        formField = 'file',
+        outputs   = [{uploadDir: '/var/www/images/original', type: 'jpg'}],
+        strip     = false
+    );
 }
 ```

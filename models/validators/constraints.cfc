@@ -29,17 +29,20 @@ component singleton {
             path      : variables.pathConstraint,
             outputPath: variables.outputPathConstraint,
             quality   : {type: 'numeric', range: '0..100'},
-            resize    : {type: 'numeric', discrete: 'gt:0'}
+            resize    : {type: 'numeric', discrete: 'gt:0'},
+            strip     : {type: 'boolean'}
         },
         crop: {
             path      : variables.pathConstraint,
             outputPath: variables.outputPathConstraint,
             width     : variables.positiveNumericConstraint,
-            height    : variables.positiveNumericConstraint
+            height    : variables.positiveNumericConstraint,
+            strip     : {type: 'boolean'}
         },
         autoOrient: {path: variables.pathConstraint, outputPath: variables.outputPathConstraint},
         resize    : {
             path   : variables.pathConstraint,
+            strip  : {type: 'boolean'},
             outputs: {
                 required : true,
                 type     : 'array',
@@ -65,6 +68,7 @@ component singleton {
         },
         validateUpload: {
             formField: {required: true},
+            strip    : {type: 'boolean'},
             outputs  : {
                 required : true,
                 type     : 'array',
