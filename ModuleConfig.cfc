@@ -21,7 +21,16 @@ component {
         settings = {
             cfmlEngine        : getCFMLEngine(),
             imageMagickPath   : getSystemSetting('IMAGEMAGICKPATH', ''), // Absolute path to the ImageMagick "magick" executable
-            imageMagickTimeout: 30 // Max seconds cfexecute will wait on an ImageMagick call before timing out
+            imageMagickTimeout: 30, // Max seconds cfexecute will wait on an ImageMagick call before timing out
+            // ImageMagick -limit resource values applied to every call - guards against decompression bombs and runaway conversions
+            // "time" defaults to imageMagickTimeout. See https://imagemagick.org/script/command-line-options.php#limit
+            imageMagickLimits : {
+                memory: '256MiB',
+                map   : '512MiB',
+                disk  : '1GiB',
+                width : '16KP',
+                height: '16KP'
+            }
         };
 
         // Add the image logger
@@ -56,17 +65,21 @@ component {
         // Injectable service layer
         binder
             .map(alias = ['Helpers@ImageMagick', '@ImageMagick'], force = true)
-            .to('imagemagickhelpers.models.services.image')
+            .to('ImageMagickHelpers.models.services.image')
             .initArg(name = 'cfmlEngine', value = settings.cfmlEngine)
             .initArg(name = 'imageMagickPath', value = settings.imageMagickPath)
-            .initArg(name = 'imageMagickTimeout', value = settings.imageMagickTimeout);
+            .initArg(name = 'imageMagickTimeout', value = settings.imageMagickTimeout)
+            .initArg(name = 'imageMagickLimits', value = settings.imageMagickLimits);
 
         // Custom cbvalidation validators - used internally by service layer
-        binder.map('fileExistsValidator@ImageMagick').to('imagemagickhelpers.models.validators.fileexists');
-        binder.map('directoryExistsValidator@ImageMagick').to('imagemagickhelpers.models.validators.directoryexists');
-        binder.map('noQuotesValidator@ImageMagick').to('imagemagickhelpers.models.validators.noquotes');
-        binder.map('atLeastOneOfValidator@ImageMagick').to('imagemagickhelpers.models.validators.atleastoneof');
-        binder.map('safePathValidator@ImageMagick').to('imagemagickhelpers.models.validators.safepath');
+        binder.map('fileExistsValidator@ImageMagick').to('ImageMagickHelpers.models.validators.fileexists');
+        binder.map('directoryExistsValidator@ImageMagick').to('ImageMagickHelpers.models.validators.directoryexists');
+        binder.map('noQuotesValidator@ImageMagick').to('ImageMagickHelpers.models.validators.noquotes');
+        binder.map('atLeastOneOfValidator@ImageMagick').to('ImageMagickHelpers.models.validators.atleastoneof');
+        binder.map('safePathValidator@ImageMagick').to('ImageMagickHelpers.models.validators.safepath');
+        binder
+            .map('supportedExtensionsValidator@ImageMagick')
+            .to('ImageMagickHelpers.models.validators.supportedextensions');
     }
 
     /**

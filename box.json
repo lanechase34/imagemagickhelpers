@@ -1,6 +1,6 @@
 {
     "name":"ImageMagickHelpers",
-    "version":"1.0.0",
+    "version":"1.0.1",
     "author":"Chase Lane",
     "homepage":"https://github.com/lanechase34/imagemagickhelpers",
     "documentation":"https://github.com/lanechase34/imagemagickhelpers",
@@ -27,8 +27,7 @@
         "testbox":"7.2.2+23",
         "testbox-cli":"1.9.0+26",
         "commandbox-boxlang":"*",
-        "commandbox-cfformat":"*",
-        "commandbox-docbox":"*"
+        "commandbox-cfformat":"*"
     },
     "ignore":[
         "**/.*",
@@ -36,19 +35,13 @@
         "coldbox",
         "modules",
         "config",
-        "build",
-        "config",
         "/server*.json"
     ],
     "scripts":{
-        "setupTemplate":"task run taskFile=build/SetupTemplate.cfc",
-        "build:module":"task run taskFile=build/Build.cfc :projectName=`package show slug` :version=`package show version`",
-        "build:docs":"task run taskFile=build/Build.cfc target=docs :projectName=`package show slug` :version=`package show version`",
         "install:dependencies":"install",
-        "release":"recipe build/release.boxr",
-        "format":"cfformat run helpers,models,tests/,ModuleConfig.cfc --overwrite",
-        "format:watch":"cfformat watch helpers,models,tests/,ModuleConfig.cfc ./.cfformat.json",
-        "format:check":"cfformat check helpers,models,tests/,ModuleConfig.cfc ./.cfformat.json",
+        "format":"cfformat run models,tests/,ModuleConfig.cfc ./.cfformat.json --overwrite",
+        "format:watch":"cfformat watch models,tests/,ModuleConfig.cfc ./.cfformat.json",
+        "format:check":"cfformat check models,tests/,ModuleConfig.cfc ./.cfformat.json",
         "start:boxlang":"server start serverConfigFile=server-boxlang-cfml@1.json --verbose",
         "start:lucee6":"server start serverConfigFile=server-lucee@6.json --verbose",
         "start:lucee7":"server start serverConfigFile=server-lucee@7.json --verbose",

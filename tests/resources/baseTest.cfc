@@ -32,4 +32,26 @@ component extends="coldbox.system.testing.BaseTestCase" appMapping="root" {
         return dir;
     }
 
+    /**
+     * Reads the EXIF orientation ImageMagick reports for an image's first frame
+     * Returns 'Undefined' when the image has no orientation metadata (ex: it was stripped)
+     */
+    public string function getOrientation(required string path) {
+        var result = '';
+
+        cfexecute(
+            name      = getInstance("Helpers@ImageMagick").getImageMagickPath(),
+            arguments = [
+                "identify",
+                "-format",
+                "%[orientation]",
+                "#arguments.path#[0]"
+            ],
+            variable = "local.result",
+            timeout  = 30
+        );
+
+        return trim(result);
+    }
+
 }

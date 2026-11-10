@@ -6,3 +6,10 @@
 *.tsx text eol=lf
 *.json text eol=lf
 *.vue text eol=lf
+
+# Binary test resources - never normalize line endings or diff as text
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.heic binary
+*.webp binary

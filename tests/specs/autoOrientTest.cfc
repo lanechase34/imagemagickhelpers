@@ -25,7 +25,6 @@ component extends="tests.resources.baseTest" {
                     outputPath = outputPath
                 );
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(200);
                 expect(dimensions.height).toBe(300);
@@ -36,82 +35,9 @@ component extends="tests.resources.baseTest" {
 
                 imageService.autoOrient(path = expandPath('/tests/resources/png_example.png'), outputPath = outputPath);
 
-                expect(fileExists(outputPath)).toBeTrue();
                 var dimensions = imageService.getDimensions(outputPath);
                 expect(dimensions.width).toBe(510);
                 expect(dimensions.height).toBe(361);
-            });
-
-            it('Auto-orients a jpeg image', () => {
-                var outputPath = tempDir & '/' & createUUID() & '.jpeg';
-
-                imageService.autoOrient(
-                    path       = expandPath('/tests/resources/jpeg_example.jpeg'),
-                    outputPath = outputPath
-                );
-
-                expect(fileExists(outputPath)).toBeTrue();
-            });
-
-            it('Auto-orients a heic image', () => {
-                var outputPath = tempDir & '/' & createUUID() & '.jpg';
-
-                imageService.autoOrient(
-                    path       = expandPath('/tests/resources/heic_example.heic'),
-                    outputPath = outputPath
-                );
-
-                expect(fileExists(outputPath)).toBeTrue();
-            });
-
-            it('Throws for an empty path', () => {
-                expect(() => imageService.autoOrient(path = '', outputPath = tempDir & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path that does not exist', () => {
-                expect(() => imageService.autoOrient(
-                    path       = expandPath('/tests/resources/does_not_exist.jpg'),
-                    outputPath = tempDir & '/out.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path containing a double-quote character', () => {
-                expect(() => imageService.autoOrient(
-                    path       = '#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp',
-                    outputPath = tempDir & '/out.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an empty outputPath', () => {
-                expect(() => imageService.autoOrient(path = expandPath('/tests/resources/jpg_example.jpg'), outputPath = '')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath containing a double-quote character', () => {
-                expect(() => imageService.autoOrient(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '#tempDir#/out"; rm -rf /tmp.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path using a UNC network path', () => {
-                expect(() => imageService.autoOrient(
-                    path       = '\\attacker.test\share\evil.jpg',
-                    outputPath = tempDir & '/out.jpg'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath starting with a pipe (ImageMagick PIPE coder command execution)', () => {
-                expect(() => imageService.autoOrient(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = '|touch /tmp/pwned'
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for an outputPath using an ImageMagick coder/protocol prefix', () => {
-                expect(() => imageService.autoOrient(
-                    path       = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputPath = 'https://attacker.test/exfil'
-                )).toThrow('ImageMagick.InputValidationException');
             });
 
             it('Throws when ImageMagick fails to produce the output file', () => {

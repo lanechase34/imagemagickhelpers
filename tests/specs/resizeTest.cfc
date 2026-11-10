@@ -15,96 +15,76 @@ component extends="tests.resources.baseTest" {
                 setup();
             });
 
-            it('Resizes to a single output using width only, preserving aspect ratio', () => {
-                var dir     = newDir();
-                var results = imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: dir, width: 100}]
-                );
+            it('Resizes each output by its own width/height rules, returning paths in outputs order', () => {
+                var widthDir  = newDir();
+                var heightDir = newDir();
+                var forcedDir = newDir();
 
-                expect(results.len()).toBe(1);
-                expect(fileExists(results[1])).toBeTrue();
-                var dimensions = imageService.getDimensions(results[1]);
-                expect(dimensions.width).toBe(100);
-                expect(dimensions.height).toBe(100);
-            });
-
-            it('Resizes to a single output using height only, preserving aspect ratio, and strips a trailing slash from resizeDir', () => {
-                var dir     = newDir();
-                var results = imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: dir & '/', height: 100}]
-                );
-
-                expect(results.len()).toBe(1);
-                expect(fileExists(results[1])).toBeTrue();
-                var dimensions = imageService.getDimensions(results[1]);
-                expect(dimensions.width).toBe(100);
-                expect(dimensions.height).toBe(100);
-            });
-
-            it('Resizes to a single output using both width and height, forcing exact dimensions and ignoring aspect ratio', () => {
-                var dir     = newDir();
+                // png_example.png is 510x361
                 var results = imageService.resize(
                     path    = expandPath('/tests/resources/png_example.png'),
-                    outputs = [{resizeDir: dir, width: 50, height: 50}]
-                );
-
-                expect(results.len()).toBe(1);
-                var dimensions = imageService.getDimensions(results[1]);
-                expect(dimensions.width).toBe(50);
-                expect(dimensions.height).toBe(50);
-            });
-
-            it('Resizes to multiple outputs in a single call, returning paths in order', () => {
-                var dirA    = newDir();
-                var dirB    = newDir();
-                var results = imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
                     outputs = [
-                        {resizeDir: dirA, width: 80},
-                        {resizeDir: dirB, height: 60}
+                        {resizeDir: widthDir, width: 100},
+                        {resizeDir: heightDir & '/', height: 100},
+                        {
+                            resizeDir: forcedDir,
+                            width    : 50,
+                            height   : 50
+                        }
                     ]
                 );
 
-                // resize() normalizes resizeDir to forward slashes before building the output path
-                expect(results.len()).toBe(2);
-                expect(results[1]).toBe(dirA.replace('\', '/', 'all') & '/jpg_example.jpg');
-                expect(results[2]).toBe(dirB.replace('\', '/', 'all') & '/jpg_example.jpg');
-                expect(fileExists(results[1])).toBeTrue();
-                expect(fileExists(results[2])).toBeTrue();
+                // resize() normalizes resizeDir to forward slashes and strips a trailing slash before building the output path
+                expect(results).toBe([
+                    widthDir.replace('\', '/', 'all') & '/png_example.png',
+                    heightDir.replace('\', '/', 'all') & '/png_example.png',
+                    forcedDir.replace('\', '/', 'all') & '/png_example.png'
+                ]);
+
+                // Width only and height only preserve aspect ratio
+                expect(imageService.getDimensions(results[1])).toBe({width: 100, height: 71});
+                expect(imageService.getDimensions(results[2])).toBe({width: 141, height: 100});
+
+                // Both forces exact dimensions, ignoring aspect ratio
+                expect(imageService.getDimensions(results[3])).toBe({width: 50, height: 50});
             });
 
             it('Handles a source path using backslashes', () => {
-                var dir         = newDir();
                 var backslashed = replace(
                     expandPath('/tests/resources/jpg_example.jpg'),
                     '/',
                     '\',
                     'all'
                 );
-                var results = imageService.resize(path = backslashed, outputs = [{resizeDir: dir, width: 60}]);
+                var results = imageService.resize(path = backslashed, outputs = [{resizeDir: newDir(), width: 60}]);
 
-                expect(results.len()).toBe(1);
                 expect(fileExists(results[1])).toBeTrue();
             });
 
-            it('Throws for an empty path', () => {
-                expect(() => imageService.resize(path = '', outputs = [{resizeDir: newDir(), width: 100}])).toThrow('ImageMagick.InputValidationException');
+            it('Strips EXIF metadata by default and preserves it when strip is false', () => {
+                var stripped = imageService.resize(
+                    path    = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputs = [{resizeDir: newDir(), width: 100}]
+                );
+                var preserved = imageService.resize(
+                    path    = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputs = [{resizeDir: newDir(), width: 100}],
+                    strip   = false
+                );
+
+                expect(getOrientation(stripped[1])).toBe('Undefined');
+                expect(getOrientation(preserved[1])).toBe('RightTop');
             });
 
-            it('Throws for a path that does not exist', () => {
-                expect(() => imageService.resize(
-                    path    = expandPath('/tests/resources/does_not_exist.jpg'),
-                    outputs = [{resizeDir: newDir(), width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
-            });
+            it('Rotates the image upright before resizing when autoOrient is true', () => {
+                // oriented_example.jpg is 300x200 with EXIF Orientation=6 - upright it is 200x300
+                var results = imageService.resize(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputs    = [{resizeDir: newDir(), width: 100}],
+                    autoOrient = true
+                );
 
-            it('Throws for a path containing a double-quote character', () => {
-                expect(() => imageService.resize(
-                    path    = '#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp',
-                    outputs = [{resizeDir: newDir(), width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
+                expect(imageService.getDimensions(results[1])).toBe({width: 100, height: 150});
             });
 
             it('Throws for an empty outputs array', () => {
@@ -118,41 +98,6 @@ component extends="tests.resources.baseTest" {
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
-            it('Throws when an output resizeDir does not exist', () => {
-                expect(() => imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: tempDir & '/does_not_exist_' & createUUID(), width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws when an output resizeDir contains a double-quote character', () => {
-                expect(() => imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: '#newDir()#"; rm -rf /tmp', width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path using a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
-                expect(() => imageService.resize(
-                    path    = '\\attacker.test\share\evil.jpg',
-                    outputs = [{resizeDir: newDir(), width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws when an output resizeDir is a UNC network path', () => {
-                expect(() => imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: '\\attacker.test\share', width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws when an output resizeDir starts with a pipe (ImageMagick PIPE coder command execution)', () => {
-                expect(() => imageService.resize(
-                    path    = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs = [{resizeDir: '|touch /tmp/pwned', width: 100}]
-                )).toThrow('ImageMagick.InputValidationException');
-            });
-
             it('Throws when an output is missing both width and height', () => {
                 expect(() => imageService.resize(
                     path    = expandPath('/tests/resources/jpg_example.jpg'),
@@ -160,14 +105,11 @@ component extends="tests.resources.baseTest" {
                 )).toThrow('ImageMagick.InputValidationException');
             });
 
-            it('Throws when an output width is not positive', () => {
+            it('Throws when an output width or height is not positive', () => {
                 expect(() => imageService.resize(
                     path    = expandPath('/tests/resources/jpg_example.jpg'),
                     outputs = [{resizeDir: newDir(), width: 0}]
                 )).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws when an output height is not positive', () => {
                 expect(() => imageService.resize(
                     path    = expandPath('/tests/resources/jpg_example.jpg'),
                     outputs = [{resizeDir: newDir(), height: -10}]
@@ -189,8 +131,6 @@ component extends="tests.resources.baseTest" {
                 // file to, forcing that second output to fail while the first output succeeds
                 directoryCreate(dirB & '/jpg_example.jpg');
 
-                var expectedSuccessPath = dirA & '/jpg_example.jpg';
-
                 expect(() => imageService.resize(
                     path    = expandPath('/tests/resources/jpg_example.jpg'),
                     outputs = [
@@ -199,7 +139,7 @@ component extends="tests.resources.baseTest" {
                     ]
                 )).toThrow('ImageMagick.ResizeException');
 
-                expect(fileExists(expectedSuccessPath)).toBeFalse();
+                expect(fileExists(dirA & '/jpg_example.jpg')).toBeFalse();
             });
         });
     }

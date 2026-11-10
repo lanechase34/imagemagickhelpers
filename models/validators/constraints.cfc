@@ -15,6 +15,16 @@ component singleton {
         'safePathValidator@ImageMagick': {}
     };
 
+    variables.directoryConstraint = {
+        required                              : true,
+        'directoryExistsValidator@ImageMagick': {},
+        'noQuotesValidator@ImageMagick'       : {},
+        'safePathValidator@ImageMagick'       : {}
+    };
+
+    // Every extension the service can map to a mime type and detected format
+    variables.supportedExtensions = 'png,jpg,jpeg,webp,heic,gif,bmp,tif,tiff,svg,avif,ico';
+
     variables.positiveNumericConstraint = {
         required: true,
         type    : 'numeric',
@@ -30,31 +40,31 @@ component singleton {
             outputPath: variables.outputPathConstraint,
             quality   : {type: 'numeric', range: '0..100'},
             resize    : {type: 'numeric', discrete: 'gt:0'},
+            strip     : {type: 'boolean'},
             autoOrient: {type: 'boolean'}
         },
         crop: {
             path      : variables.pathConstraint,
             outputPath: variables.outputPathConstraint,
             width     : variables.positiveNumericConstraint,
-            height    : variables.positiveNumericConstraint
+            height    : variables.positiveNumericConstraint,
+            strip     : {type: 'boolean'},
+            autoOrient: {type: 'boolean'}
         },
         autoOrient: {path: variables.pathConstraint, outputPath: variables.outputPathConstraint},
         resize    : {
-            path   : variables.pathConstraint,
-            outputs: {
+            path      : variables.pathConstraint,
+            strip     : {type: 'boolean'},
+            autoOrient: {type: 'boolean'},
+            outputs   : {
                 required : true,
                 type     : 'array',
                 size     : '1..10',
                 arrayItem: {
                     type       : 'struct',
                     constraints: {
-                        resizeDir: {
-                            required                              : true,
-                            'directoryExistsValidator@ImageMagick': {},
-                            'noQuotesValidator@ImageMagick'       : {},
-                            'safePathValidator@ImageMagick'       : {}
-                        },
-                        width: {
+                        resizeDir: variables.directoryConstraint,
+                        width    : {
                             'atLeastOneOfValidator@ImageMagick': {otherField: 'height'},
                             type                               : 'numeric',
                             discrete                           : 'gt:0'
@@ -65,25 +75,27 @@ component singleton {
             }
         },
         validateUpload: {
-            formField: {required: true},
-            outputs  : {
+            formField  : {required: true},
+            extensions : {required: true, 'supportedExtensionsValidator@ImageMagick': variables.supportedExtensions},
+            strip      : {type: 'boolean'},
+            autoOrient : {type: 'boolean'},
+            maxPixels  : {type: 'numeric', discrete: 'gt:0'},
+            maxFileSize: {type: 'numeric', discrete: 'gt:0'},
+            outputs    : {
                 required : true,
                 type     : 'array',
                 size     : '1..10',
                 arrayItem: {
                     type       : 'struct',
                     constraints: {
-                        uploadDir: {
-                            required                              : true,
-                            'directoryExistsValidator@ImageMagick': {},
-                            'noQuotesValidator@ImageMagick'       : {},
-                            'safePathValidator@ImageMagick'       : {}
-                        },
-                        type: {required: true}
+                        uploadDir: variables.directoryConstraint,
+                        type     : {
+                            required                                  : true,
+                            'supportedExtensionsValidator@ImageMagick': variables.supportedExtensions
+                        }
                     }
                 }
-            },
-            autoOrient: {type: 'boolean'}
+            }
         }
     };
 

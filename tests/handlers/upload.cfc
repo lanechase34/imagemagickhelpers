@@ -3,22 +3,29 @@ component {
     property name="imageService" inject="Helpers@ImageMagick";
 
     /**
-      * Test only endpoint for validasteUpload() through a real multipart HTTP request
+      * Test only endpoint for validateUpload() through a real multipart HTTP request
+      * Any optional validateUpload() argument posted as a form field is passed through, otherwise its default applies
       */
     function uploadFile(event, rc, prc) {
         var result = {success: true};
 
         try {
-            var outputs    = structKeyExists(rc, 'outputs') ? deserializeJSON(rc.outputs) : [];
-            var extensions = structKeyExists(rc, 'extensions') ? rc.extensions : 'png,jpg,jpeg,webp,heic';
-            var autoOrient = structKeyExists(rc, 'autoOrient') ? rc.autoOrient : false;
+            var args = {formField: 'file', outputs: structKeyExists(rc, 'outputs') ? deserializeJSON(rc.outputs) : []};
+            for(
+                var name in [
+                    'extensions',
+                    'strip',
+                    'autoOrient',
+                    'maxPixels',
+                    'maxFileSize'
+                ]
+            ) {
+                if(structKeyExists(rc, name)) {
+                    args[name] = rc[name];
+                }
+            }
 
-            result.filename = imageService.validateUpload(
-                formField  = 'file',
-                outputs    = outputs,
-                extensions = extensions,
-                autoOrient = autoOrient
-            );
+            result.filename = imageService.validateUpload(argumentCollection = args);
         }
         catch(any e) {
             result.success = false;

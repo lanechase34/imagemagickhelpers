@@ -1,4 +1,11 @@
-component singleton accessors="true" hint="Service layer for interacting with ImageMagick" {
+/**
+ * Service layer for interacting with ImageMagick
+ *
+ * Every public function validates its arguments first and throws ImageMagick.InputValidationException on a violation.
+ * Exceptions carry what failed in their message and the technical cause (ex: ImageMagick's error output) in their detail -
+ * ImageMagick.UploadValidationException messages are written to be shown to end users as is.
+ */
+component singleton accessors="true" {
 
     property name="imageLog"          inject="logbox:logger:Image";
     property name="validationManager" inject="ValidationManager@cbvalidation";
@@ -9,6 +16,7 @@ component singleton accessors="true" hint="Service layer for interacting with Im
     property name="extToFormat"        type="struct";
     property name="imageMagickPath"    type="string";
     property name="imageMagickTimeout" type="numeric";
+    property name="limitArgs"          type="array";
 
     /**
      * Creates a new ImageMagick service
@@ -16,22 +24,28 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      * @cfmlEngine         The current cfml engine (lucee/coldfusion/boxlang)
      * @imageMagickPath    Absolute path to the ImageMagick "magick" executable
      * @imageMagickTimeout Max seconds cfexecute will wait on an ImageMagick call before timing out
+     * @imageMagickLimits  ImageMagick -limit resource values applied to every call ex: {memory: '256MiB', width: '16KP'}
      *
-     * @return imagemagickhelpers.models.services.image
+     * @return ImageMagickHelpers.models.services.image
      */
     public image function init(
         required string cfmlEngine,
         required string imageMagickPath,
-        required numeric imageMagickTimeout
+        required numeric imageMagickTimeout,
+        struct imageMagickLimits = {}
     ) {
-        variables.cfmlEngine = arguments.cfmlEngine;
-        variables.extToMime  = {
+        variables.cfmlEngine         = arguments.cfmlEngine;
+        variables.imageMagickPath    = arguments.imageMagickPath;
+        variables.imageMagickTimeout = arguments.imageMagickTimeout;
+        variables.limitArgs          = buildLimitArgs(arguments.imageMagickLimits, arguments.imageMagickTimeout);
+
+        // Keys of both maps must match supportedExtensions in validators/constraints.cfc
+        variables.extToMime = {
             png : 'image/png',
             jpg : 'image/jpeg',
             jpeg: 'image/jpeg',
             webp: 'image/webp',
             heic: 'image/heic',
-            heif: 'image/heif',
             gif : 'image/gif',
             bmp : 'image/bmp',
             tif : 'image/tiff',
@@ -41,15 +55,13 @@ component singleton accessors="true" hint="Service layer for interacting with Im
             ico : 'image/vnd.microsoft.icon'
         };
 
-        // Expect values of ImageMagicks "identify -format %m"
-        // Use to confirm the uploaded content is actually what the user claims
+        // ImageMagick's "identify -format %m" for each extension - confirms an upload's content is what its extension claims
         variables.extToFormat = {
             png : 'PNG',
             jpg : 'JPEG',
             jpeg: 'JPEG',
             webp: 'WEBP',
             heic: 'HEIC',
-            heif: 'HEIF',
             gif : 'GIF',
             bmp : 'BMP',
             tif : 'TIFF',
@@ -58,13 +70,836 @@ component singleton accessors="true" hint="Service layer for interacting with Im
             avif: 'AVIF',
             ico : 'ICO'
         };
-        variables.imageMagickPath    = arguments.imageMagickPath;
-        variables.imageMagickTimeout = arguments.imageMagickTimeout;
+
         return this;
     }
 
+    /* ==================================================================================================
+     * Public API
+     * ================================================================================================== */
+
     /**
-     * Validates argumentCollection of the calling function against its named cbvalidation constraints
+     * Verify ImageMagick is installed and reachable at the configured path
+     *
+     * @throws ImageMagick.VerificationException When ImageMagick cannot be reached or does not return a version
+     */
+    public void function verifyImageMagick() {
+        var result = {output: '', error: ''};
+        try {
+            result = runMagick(commandArgs = ['-version'], applyLimits = false);
+        }
+        catch(any e) {
+            result.error = e.message;
+        }
+
+        if(!len(trim(result.output))) {
+            imageLog.error('ImageMagick is not available at #getImageMagickPath()# | #result.error#');
+            throw(
+                type    = 'ImageMagick.VerificationException',
+                message = 'ImageMagick is not available at #getImageMagickPath()#',
+                detail  = result.error
+            );
+        }
+    }
+
+    /**
+     * Check path is a valid, readable image and report the format ImageMagick detected for its first frame
+     * (ex: PNG, JPEG, MVG) - based on the file's actual content, not its extension
+     *
+     * The image is fully decoded, so a file with a valid header but corrupt pixel data is rejected
+     *
+     * @path Full path to the image to check
+     *
+     * @return ImageMagick's uppercased format name for path
+     *
+     * @throws ImageMagick.InputValidationException When path is empty or does not exist
+     * @throws ImageMagick.IdentifyException        When ImageMagick reports path is not a valid image
+     */
+    public string function identify(required string path) {
+        validateArgs('identify', arguments);
+
+        return runIdentify(path = arguments.path, format = '%m').ucase();
+    }
+
+    /**
+     * Read the pixel dimensions of an image's first frame - from its header alone, so it's fast for any size image
+     *
+     * @path Full path to the image to check
+     *
+     * @return Struct of {width, height} in pixels
+     *
+     * @throws ImageMagick.InputValidationException When path is empty or does not exist
+     * @throws ImageMagick.IdentifyException        When ImageMagick fails to report dimensions for path
+     */
+    public struct function getDimensions(required string path) {
+        validateArgs('getDimensions', arguments);
+
+        var info = inspect(arguments.path);
+        return {width: info.width, height: info.height};
+    }
+
+    /**
+     * Adjust quality and shrink-to-fit the source image, writing the result to outputPath
+     * Only shrinks the image if it exceeds the resize bound - images smaller than resize are left at their original dimensions
+     *
+     * @path       Full path to source image
+     * @outputPath Full path to output file including extension, which determines its format
+     * @quality    (Optional) 0-100 quality of image, defaults to 50
+     * @resize     (Optional) Max width/height in pixels to shrink to, defaults to 1200
+     * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
+     * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag, defaults to false
+     *
+     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 0 and 100, or resize is not a positive number
+     * @throws ImageMagick.ConversionException      When ImageMagick fails to produce the converted output
+     */
+    public void function convert(
+        required string path,
+        required string outputPath,
+        numeric quality    = 50,
+        numeric resize     = 1200,
+        boolean strip      = true,
+        boolean autoOrient = false
+    ) {
+        validateArgs('convert', arguments);
+
+        var source = {width: 0, height: 0};
+        try {
+            source = inspect(arguments.path);
+        }
+        catch(ImageMagick.IdentifyException e) {
+        }
+
+        writeOutputs(
+            commandArgs = buildConvertArgs(
+                path        = arguments.path,
+                source      = source,
+                outputPaths = [arguments.outputPath],
+                quality     = arguments.quality,
+                resize      = arguments.resize,
+                strip       = arguments.strip,
+                autoOrient  = arguments.autoOrient
+            ),
+            outputPaths    = [arguments.outputPath],
+            exceptionType  = 'ImageMagick.ConversionException',
+            failureMessage = 'Failed to convert image #arguments.path# to #arguments.outputPath#'
+        );
+    }
+
+    /**
+     * Crop the source image to exact dimensions: scales it to fully cover the target box (preserving aspect ratio)
+     * then crops the overflow from the center. Unlike resize()'s forced-dimensions mode, this never distorts the image.
+     *
+     * @path       Full path to source image
+     * @outputPath Full path to output file including extension, which determines its format
+     * @width      Target width in pixels
+     * @height     Target height in pixels
+     * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
+     * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag before cropping, defaults to false
+     *
+     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, or width/height is not a positive number
+     * @throws ImageMagick.CropException            When ImageMagick fails to produce the cropped output
+     */
+    public void function crop(
+        required string path,
+        required string outputPath,
+        required numeric width,
+        required numeric height,
+        boolean strip      = true,
+        boolean autoOrient = false
+    ) {
+        validateArgs('crop', arguments);
+
+        writeOutputs(
+            commandArgs = flattenArgs([
+                jpegSizeHint(max(arguments.width, arguments.height)),
+                arguments.path,
+                orientAndStripArgs(arguments.autoOrient, arguments.strip),
+                '-resize',
+                '#arguments.width#x#arguments.height#^',
+                '-gravity',
+                'center',
+                '-extent',
+                '#arguments.width#x#arguments.height#',
+                arguments.outputPath
+            ]),
+            outputPaths    = [arguments.outputPath],
+            exceptionType  = 'ImageMagick.CropException',
+            failureMessage = 'Failed to crop image #arguments.path# to #arguments.outputPath#'
+        );
+    }
+
+    /**
+     * Physically rotate/flip the image according to its EXIF orientation tag and remove that tag, writing the result to outputPath
+     * Photos uploaded directly from phone cameras are frequently stored sideways/upside-down with only an EXIF flag
+     * marking the correct orientation
+     *
+     * @path       Full path to source image
+     * @outputPath Full path to output file including extension, which determines its format
+     *
+     * @throws ImageMagick.InputValidationException When path does not exist or outputPath is empty
+     * @throws ImageMagick.OrientException          When ImageMagick fails to produce the oriented output
+     */
+    public void function autoOrient(required string path, required string outputPath) {
+        validateArgs('autoOrient', arguments);
+
+        writeOutputs(
+            commandArgs = [
+                arguments.path,
+                '-auto-orient',
+                arguments.outputPath
+            ],
+            outputPaths    = [arguments.outputPath],
+            exceptionType  = 'ImageMagick.OrientException',
+            failureMessage = 'Failed to auto-orient image #arguments.path# to #arguments.outputPath#'
+        );
+    }
+
+    /**
+     * Resize the source image to one or more output sizes, decoding the source only once
+     *
+     * If both width and height are provided for an output, the image is forced to those exact dimensions (aspect ratio ignored)
+     * If only one of width/height is provided, the image is scaled to that dimension with aspect ratio preserved
+     * Each output is written under the source's filename in its resizeDir, intentionally overwriting any file already there
+     *
+     * @path       Full path to source image
+     * @outputs    Array of structs of resize destination and width/height of resized image ex: [{resizeDir: '../', width: 100}, {resizeDir: '../', height: 200}, {resizeDir: '../', width: 100, height: 200}]
+     * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
+     * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag before resizing, defaults to false
+     *
+     * @return Array of full paths to the resized output files, in outputs order
+     *
+     * @throws ImageMagick.InputValidationException When path does not exist, outputs is empty, two outputs share a resizeDir, or an output entry is missing resizeDir, is missing both width and height, or has a non-positive width/height
+     * @throws ImageMagick.ResizeException          When ImageMagick fails to produce one of the resized outputs
+     */
+    public array function resize(
+        required string path,
+        required array outputs,
+        boolean strip      = true,
+        boolean autoOrient = false
+    ) {
+        // Normalize before validating so fileExistsValidator checks the same path used to build outputs below
+        arguments.path = normalizePath(arguments.path);
+
+        validateArgs('resize', arguments);
+
+        // Build every output up front so we fail before resizing anything
+        var fileName        = listLast(arguments.path, '/');
+        var preparedOutputs = arguments.outputs.map((output) => buildResizeOutput(output, fileName));
+        var outputPaths     = preparedOutputs.map((prepared) => prepared.outputPath);
+
+        ensureUniqueOutputs(
+            outputPaths,
+            'Each resize output must use a different resizeDir - they all write the source filename'
+        );
+
+        // Each output resizes its own clone of the decoded source, so the source is only read once
+        var resizeArgs = [];
+        preparedOutputs.each((prepared) => {
+            resizeArgs.append(
+                [
+                    '(',
+                    '+clone',
+                    '-resize',
+                    prepared.geometry,
+                    '-write',
+                    prepared.outputPath,
+                    '+delete',
+                    ')'
+                ],
+                true
+            );
+        });
+
+        var largestDimension = preparedOutputs.reduce((largest, prepared) => max(largest, prepared.maxDimension), 0);
+
+        writeOutputs(
+            commandArgs = flattenArgs([
+                jpegSizeHint(largestDimension),
+                arguments.path,
+                orientAndStripArgs(arguments.autoOrient, arguments.strip),
+                resizeArgs,
+                'null:'
+            ]),
+            outputPaths    = outputPaths,
+            exceptionType  = 'ImageMagick.ResizeException',
+            failureMessage = 'Failed to resize image #arguments.path#'
+        );
+
+        return outputPaths;
+    }
+
+    /**
+     * Validate an image uploaded under formField and convert it to each requested output
+     *
+     * 1. Upload it to its own temp directory, check its extension and file size, and rename it to a UUID
+     * 2. Read its header to check it's a real image of the type its extension claims, within maxPixels
+     * 3. Convert it to every output from a single decode, all named with the same new UUID
+     *
+     * The temp directory is always removed. If any output fails, every output from this call is removed.
+     *
+     * @formField   The form field the image was uploaded under
+     * @outputs     Array of structs of upload destination and conversion type ex: [{uploadDir: uploadPath, type: 'webp'}]
+     * @extensions  (Optional) Comma-delimited list of allowed source file extensions, defaults to 'png,jpg,jpeg,webp,heic'
+     * @strip       (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from each converted output, defaults to true
+     * @autoOrient  (Optional) Rotate/flip each output upright using the upload's EXIF orientation tag, defaults to false
+     * @maxPixels   (Optional) Max width x height of the upload in pixels, defaults to 100000000 (100 megapixels)
+     * @maxFileSize (Optional) Max size of the uploaded file in bytes, defaults to 26214400 (25MB)
+     *
+     * @return The converted files' shared UUID filename (without extension)
+     *
+     * @throws ImageMagick.InputValidationException  When formField is empty, outputs is empty, an output entry is missing uploadDir or type, two outputs share an uploadDir and type, an extension or type is not supported, or maxPixels/maxFileSize is not a positive number
+     * @throws ImageMagick.UploadValidationException When no file is uploaded, the upload's extension is not in extensions, it exceeds maxFileSize, it is not a valid image, its content does not match its extension, it exceeds maxPixels, or an output fails to convert
+     */
+    public string function validateUpload(
+        required string formField,
+        required array outputs,
+        string extensions   = 'png,jpg,jpeg,webp,heic',
+        boolean strip       = true,
+        boolean autoOrient  = false,
+        numeric maxPixels   = 100000000,
+        numeric maxFileSize = 26214400
+    ) {
+        validateArgs('validateUpload', arguments);
+
+        // Build every output path up front so we fail before uploading anything
+        var newName     = createUUID().replace('-', '', 'all');
+        var outputPaths = arguments.outputs.map((output) => '#normalizePath(output.uploadDir)#/#newName#.#output.type.trim().lcase()#');
+
+        ensureUniqueOutputs(outputPaths, 'Each upload output must have a different uploadDir and type combination');
+
+        // Each upload gets its own temp directory, so concurrent uploads can never collide with or see each other's files
+        var tempDir = '#normalizePath(getTempDirectory())#/imagemagick-upload-#lCase(createUUID())#';
+        directoryCreate(tempDir);
+
+        try {
+            var tempPath = uploadToTemp(
+                formField         = arguments.formField,
+                destination       = tempDir,
+                fileName          = newName,
+                allowedExtensions = listToArray(arguments.extensions, ',').map((ext) => ext.trim().lcase()),
+                maxFileSize       = arguments.maxFileSize
+            );
+
+            var source = checkUploadedImage(path = tempPath, maxPixels = arguments.maxPixels);
+
+            convertUpload(
+                path        = tempPath,
+                source      = source,
+                outputPaths = outputPaths,
+                strip       = arguments.strip,
+                autoOrient  = arguments.autoOrient
+            );
+        }
+        finally {
+            if(directoryExists(tempDir)) {
+                directoryDelete(tempDir, true);
+            }
+        }
+
+        return newName;
+    }
+
+    /**
+     * Step 1 - upload the form field into destination, check its extension and size, then rename it to fileName
+     * The extension and size are checked before ImageMagick ever reads the file
+     *
+     * @formField         The form field the image was uploaded under
+     * @destination       The upload's own temp directory
+     * @fileName          Name to give the file, without extension
+     * @allowedExtensions Array of trimmed, lowercased extensions already validated against extToMime
+     * @maxFileSize       Max size of the uploaded file in bytes
+     *
+     * @return Full path to the renamed upload
+     *
+     * @throws ImageMagick.UploadValidationException When no file is uploaded, its extension is not allowed, or it exceeds maxFileSize
+     */
+    private string function uploadToTemp(
+        required string formField,
+        required string destination,
+        required string fileName,
+        required array allowedExtensions,
+        required numeric maxFileSize
+    ) {
+        var mimeTypes  = arguments.allowedExtensions.map((ext) => getExtToMime()[ext]).toList(',');
+        var uploadArgs = {
+            destination: arguments.destination,
+            fileField  : arguments.formField,
+            strict     : true
+        };
+
+        // Lucee and Adobe/BoxLang name these cffile attributes differently
+        if(getCfmlEngine() == 'lucee') {
+            uploadArgs.accept     = mimeTypes;
+            uploadArgs.onConflict = 'makeUnique';
+        }
+        else {
+            uploadArgs.mimeType     = mimeTypes;
+            uploadArgs.nameConflict = 'makeUnique';
+        }
+
+        // Result must be local - this service is a singleton, so an unscoped result would be shared across concurrent requests
+        var upload = {};
+        try {
+            cffile(
+                action              = "upload",
+                attributeCollection = uploadArgs,
+                accept              = mimeTypes,
+                result              = "local.upload"
+            );
+        }
+        catch(any e) {
+            rejectUpload(message = 'No valid image was uploaded.', detail = e.message);
+        }
+
+        var extension = upload.serverFileExt.lcase();
+        if(!arrayFind(arguments.allowedExtensions, extension)) {
+            rejectUpload(
+                message = 'File is not an allowed image type.',
+                detail  = 'Extension #extension# is not in #arguments.allowedExtensions.toList(', ')#'
+            );
+        }
+
+        if(upload.fileSize > arguments.maxFileSize) {
+            rejectUpload(
+                message = 'File exceeds the maximum allowed size of #inUnits(arguments.maxFileSize, 1048576)#MB.',
+                detail  = 'Upload is #upload.fileSize# bytes, the maximum is #arguments.maxFileSize#'
+            );
+        }
+
+        // Rename to a UUID before ImageMagick sees the file - the client's filename may contain characters
+        // ImageMagick interprets in input paths, ex: * and ? are globbed against the directory
+        var tempPath = '#arguments.destination#/#arguments.fileName#.#extension#';
+        fileMove('#upload.serverDirectory#/#upload.serverFile#', tempPath);
+
+        return tempPath;
+    }
+
+    /**
+     * Step 2 - read the upload's header to check it's a real image of the type its extension claims, within maxPixels
+     * Only the header is read, so an oversized image is rejected before anything decodes it
+     *
+     * @path      Full path to the renamed upload
+     * @maxPixels Max width x height of the upload in pixels
+     *
+     * @return Struct of {format, width, height} read from the upload's header
+     *
+     * @throws ImageMagick.UploadValidationException When it is not a valid image, its content does not match its extension, or it exceeds maxPixels
+     */
+    private struct function checkUploadedImage(required string path, required numeric maxPixels) {
+        var extension = listLast(arguments.path, '.');
+
+        var info = {};
+        try {
+            info = inspect(arguments.path);
+        }
+        catch(any e) {
+            rejectUpload(message = 'File could not be read as a valid image.', detail = '#e.message# | #e.detail#');
+        }
+
+        // ImageMagick detects the format from the file's content, so this catches a spoofed extension
+        if(info.format != getExtToFormat()[extension]) {
+            rejectUpload(
+                message = 'File contents do not match its .#extension# extension.',
+                detail  = 'ImageMagick detected #info.format#, expected #getExtToFormat()[extension]#'
+            );
+        }
+
+        if(info.width * info.height > arguments.maxPixels) {
+            rejectUpload(
+                message = 'Image is too large - it can be at most #inUnits(arguments.maxPixels, 1000000)# megapixels.',
+                detail  = 'Upload is #info.width#x#info.height#, the maximum is #arguments.maxPixels# pixels'
+            );
+        }
+
+        return info;
+    }
+
+    /**
+     * Step 3 - convert the upload to every output from a single decode
+     * A corrupt image body that passed the header read in step 2 fails here
+     *
+     * @path        Full path to the renamed upload
+     * @source      Upload's header info from step 2 ex: {format: 'JPEG', width: 4032, height: 3024}
+     * @outputPaths Full paths to write, the format of each is determined by its extension
+     * @strip       Whether to strip metadata
+     * @autoOrient  Whether to rotate/flip the image upright using its EXIF orientation tag
+     *
+     * @throws ImageMagick.UploadValidationException When an output fails to convert
+     */
+    private void function convertUpload(
+        required string path,
+        required struct source,
+        required array outputPaths,
+        required boolean strip,
+        required boolean autoOrient
+    ) {
+        try {
+            writeOutputs(
+                commandArgs = buildConvertArgs(
+                    path        = arguments.path,
+                    source      = arguments.source,
+                    outputPaths = arguments.outputPaths,
+                    quality     = 50,
+                    resize      = 1200,
+                    strip       = arguments.strip,
+                    autoOrient  = arguments.autoOrient
+                ),
+                outputPaths    = arguments.outputPaths,
+                exceptionType  = 'ImageMagick.ConversionException',
+                failureMessage = 'Failed to convert image upload'
+            );
+        }
+        catch(any e) {
+            rejectUpload(message = 'Image could not be processed.', detail = '#e.message# | #e.detail#');
+        }
+    }
+
+    /**
+     * Throw an upload rejection - message is shown to end users, detail holds the technical cause
+     *
+     * @message User-facing reason the upload was rejected
+     * @detail  Technical cause, for logs and developers
+     *
+     * @throws ImageMagick.UploadValidationException Always
+     */
+    private void function rejectUpload(required string message, string detail = '') {
+        throw(
+            type    = 'ImageMagick.UploadValidationException',
+            message = arguments.message,
+            detail  = arguments.detail
+        );
+    }
+
+    /**
+     * Run the ImageMagick executable with the given arguments
+     *
+     * @commandArgs Arguments to pass after the tool and resource limits
+     * @tool        (Optional) ImageMagick tool to run ex: 'identify', defaults to running magick itself
+     * @applyLimits (Optional) Whether to apply the configured resource limits, defaults to true
+     *
+     * @return Struct of {output, error} - ImageMagick's stdout and stderr
+     */
+    private struct function runMagick(
+        required array commandArgs,
+        string tool         = '',
+        boolean applyLimits = true
+    ) {
+        var fullArgs = [];
+        if(len(arguments.tool)) {
+            fullArgs.append(arguments.tool);
+        }
+        if(arguments.applyLimits) {
+            fullArgs.append(getLimitArgs(), true);
+        }
+        fullArgs.append(arguments.commandArgs, true);
+
+        var result      = '';
+        var errorResult = '';
+
+        cfexecute(
+            name          = getImageMagickPath(),
+            arguments     = fullArgs,
+            variable      = "local.result",
+            errorVariable = "local.errorResult",
+            timeout       = getImageMagickTimeout()
+        );
+
+        return {output: result, error: errorResult};
+    }
+
+    /**
+     * Run identify with a -format string against an image's first frame
+     *
+     * @path   Full path to the image, already validated
+     * @format identify -format string ex: '%m'
+     * @ping   (Optional) Read only the header instead of decoding the whole image, defaults to false
+     *
+     * @return identify's trimmed output
+     *
+     * @throws ImageMagick.IdentifyException When ImageMagick cannot read path
+     */
+    private string function runIdentify(
+        required string path,
+        required string format,
+        boolean ping = false
+    ) {
+        var commandArgs = arguments.ping ? ['-ping'] : [];
+        commandArgs.append(
+            [
+                '-format',
+                arguments.format,
+                '#arguments.path#[0]'
+            ],
+            true
+        );
+
+        var result = {output: '', error: ''};
+        try {
+            result = runMagick(commandArgs = commandArgs, tool = 'identify');
+        }
+        catch(any e) {
+            result.error = e.message;
+        }
+
+        if(!len(trim(result.output))) {
+            imageLog.warn('ImageMagick could not read #arguments.path# | #result.error#');
+            throw(
+                type    = 'ImageMagick.IdentifyException',
+                message = '#arguments.path# is not a valid image',
+                detail  = result.error
+            );
+        }
+
+        return trim(result.output);
+    }
+
+    /**
+     * Read the format and dimensions of an image's first frame from its header alone, without decoding its pixels
+     *
+     * @path Full path to the image, already validated
+     *
+     * @return Struct of {format, width, height}
+     *
+     * @throws ImageMagick.IdentifyException When ImageMagick cannot read path's header
+     */
+    private struct function inspect(required string path) {
+        var output = runIdentify(
+            path   = arguments.path,
+            format = '%m %w %h',
+            ping   = true
+        );
+        var parts = listToArray(output, ' ');
+
+        if(parts.len() != 3 || !isNumeric(parts[2]) || !isNumeric(parts[3])) {
+            throw(
+                type    = 'ImageMagick.IdentifyException',
+                message = 'ImageMagick did not report the format and dimensions of #arguments.path#',
+                detail  = output
+            );
+        }
+
+        return {
+            format: parts[1].ucase(),
+            width : val(parts[2]),
+            height: val(parts[3])
+        };
+    }
+
+    /**
+     * Run an ImageMagick command that writes outputPaths, then confirm every one of them was written
+     * Stale files already at an output path are removed first so a failed run can't be mistaken for success,
+     * and if any output is missing afterwards, every output from this run is removed before throwing
+     *
+     * @commandArgs    Arguments to pass to magick, writing every path in outputPaths
+     * @outputPaths    Full paths the command is expected to write
+     * @exceptionType  Exception type to throw on failure
+     * @failureMessage What failed, used as the exception message
+     *
+     * @throws exceptionType When ImageMagick fails or does not write every output
+     */
+    private void function writeOutputs(
+        required array commandArgs,
+        required array outputPaths,
+        required string exceptionType,
+        required string failureMessage
+    ) {
+        deleteFiles(arguments.outputPaths);
+
+        var failure = '';
+        try {
+            var result       = runMagick(arguments.commandArgs);
+            var missingPaths = arguments.outputPaths.filter((outputPath) => !fileExists(outputPath));
+
+            if(missingPaths.len()) {
+                failure = 'ImageMagick did not create #missingPaths.toList(', ')# | #result.error#';
+            }
+        }
+        catch(any e) {
+            failure = e.message;
+        }
+
+        if(len(failure)) {
+            deleteFiles(arguments.outputPaths);
+            imageLog.error('#arguments.failureMessage# | #failure#');
+            throw(
+                type    = arguments.exceptionType,
+                message = arguments.failureMessage,
+                detail  = failure
+            );
+        }
+    }
+
+    /**
+     * Delete each path that exists as a file
+     *
+     * @paths Full paths to delete
+     */
+    private void function deleteFiles(required array paths) {
+        arguments.paths.each((path) => {
+            if(fileExists(path)) {
+                fileDelete(path);
+            }
+        });
+    }
+
+    /**
+     * Build the -limit arguments applied to every call
+     * ImageMagick enforces its own time limit too, so a timed out call stops working instead of running on in the background
+     *
+     * @limits  ImageMagick -limit resource values ex: {memory: '256MiB', width: '16KP'}
+     * @timeout Seconds to use as the time limit when limits has none
+     *
+     * @return Array of -limit arguments
+     */
+    private array function buildLimitArgs(required struct limits, required numeric timeout) {
+        var allLimits = duplicate(arguments.limits);
+        if(!allLimits.keyExists('time')) {
+            allLimits.time = arguments.timeout;
+        }
+
+        var limitArgs = [];
+        allLimits.each((resource, value) => {
+            limitArgs.append(['-limit', lCase(resource), '#value#'], true);
+        });
+        return limitArgs;
+    }
+
+    /**
+     * Build the arguments to adjust quality and shrink-to-fit path, writing it to each of outputPaths from a single decode
+     *
+     * @path        Full path to source image
+     * @source      Source's header info ex: {format: 'JPEG', width: 4032, height: 3024}
+     * @outputPaths Full paths to write, the format of each is determined by its extension
+     * @quality     0-100 quality of image
+     * @resize      Max width/height in pixels to shrink to
+     * @strip       Whether to strip metadata
+     * @autoOrient  Whether to rotate/flip the image upright using its EXIF orientation tag
+     *
+     * @return Arguments to pass to writeOutputs()
+     */
+    private array function buildConvertArgs(
+        required string path,
+        required struct source,
+        required array outputPaths,
+        required numeric quality,
+        required numeric resize,
+        required boolean strip,
+        required boolean autoOrient
+    ) {
+        // magick writes its final argument - every earlier output is written mid-pipeline with -write
+        var lastIndex = arguments.outputPaths.len();
+        var writeArgs = [];
+        arguments.outputPaths.each((outputPath, index) => {
+            if(index < lastIndex) {
+                writeArgs.append(['-write', outputPath], true);
+            }
+        });
+
+        return flattenArgs([
+            jpegSizeHint(arguments.resize, arguments.source),
+            arguments.path,
+            orientAndStripArgs(arguments.autoOrient, arguments.strip),
+            '-quality',
+            arguments.quality,
+            '-resize',
+            '#arguments.resize#x#arguments.resize#>',
+            writeArgs,
+            arguments.outputPaths[lastIndex]
+        ]);
+    }
+
+    /**
+     * Build a resize() output's ImageMagick geometry string and destination path
+     *
+     * @output   The output struct, already validated ex: {resizeDir: '../', width: 100, height: 200}
+     * @fileName Source image filename to use for the destination file
+     *
+     * @return Struct of {outputPath, geometry, maxDimension}
+     */
+    private struct function buildResizeOutput(required struct output, required string fileName) {
+        var hasWidth  = arguments.output.keyExists('width') && len(arguments.output.width);
+        var hasHeight = arguments.output.keyExists('height') && len(arguments.output.height);
+        var geometry  = '';
+
+        if(hasWidth && hasHeight) {
+            // ! forces the exact dimensions, ignoring aspect ratio
+            geometry = '#arguments.output.width#x#arguments.output.height#!';
+        }
+        else if(hasWidth) {
+            geometry = '#arguments.output.width#';
+        }
+        else {
+            geometry = 'x#arguments.output.height#';
+        }
+
+        return {
+            outputPath  : '#normalizePath(arguments.output.resizeDir)#/#arguments.fileName#',
+            geometry    : geometry,
+            maxDimension: max(hasWidth ? arguments.output.width : 0, hasHeight ? arguments.output.height : 0)
+        };
+    }
+
+    /**
+     * Read hint letting the JPEG decoder skip straight to a reduced scale instead of decoding every pixel
+     * Requests at least 2x the target so resampling quality is unaffected - ignored by other formats
+     * The decoder upscales (up to 2x) a source smaller than the hint in either dimension, so when the source's
+     * dimensions are known the hint is skipped for those - a shrink-only resize (ex: 1200x1200>) would otherwise keep the upscale
+     *
+     * @maxDimension Largest target width/height in pixels the command will resize to
+     * @source       (Optional) Source's dimensions ex: {width: 4032, height: 3024}
+     *
+     * @return Arguments to place before the input path
+     */
+    private array function jpegSizeHint(required numeric maxDimension, struct source = {}) {
+        var size = ceiling(arguments.maxDimension * 2);
+        if(arguments.source.keyExists('width') && min(arguments.source.width, arguments.source.height) < size) {
+            return [];
+        }
+        return ['-define', 'jpeg:size=#size#x#size#'];
+    }
+
+    /**
+     * Operators applied right after the source is read
+     * Auto-orient must run before -strip, which removes the EXIF orientation tag
+     *
+     * @autoOrient Whether to rotate/flip the image upright using its EXIF orientation tag
+     * @strip      Whether to strip metadata
+     *
+     * @return Arguments to place directly after the input path
+     */
+    private array function orientAndStripArgs(required boolean autoOrient, required boolean strip) {
+        var args = [];
+        if(arguments.autoOrient) {
+            args.append('-auto-orient');
+        }
+        if(arguments.strip) {
+            args.append('-strip');
+        }
+        return args;
+    }
+
+    /**
+     * Flatten a mix of strings and arrays of strings into a single ImageMagick argument array
+     *
+     * @parts Strings and/or arrays of strings, in command order
+     *
+     * @return Flat array of argument strings
+     */
+    private array function flattenArgs(required array parts) {
+        var flat = [];
+        arguments.parts.each((part) => {
+            if(isArray(part)) {
+                flat.append(part, true);
+            }
+            else {
+                flat.append('#part#');
+            }
+        });
+        return flat;
+    }
+
+    /**
+     * Validate argumentCollection of the calling function against its named cbvalidation constraints
      *
      * @functionName Name of the function whose constraints to validate against, must exist in validators/constraints.cfc
      * @args         The argumentCollection of the calling function
@@ -83,551 +918,46 @@ component singleton accessors="true" hint="Service layer for interacting with Im
     }
 
     /**
-     * Verify ImageMagick is installed and reachable at the configured path
+     * Throw when two outputs would be written to the same path - the later one would silently overwrite the earlier
+     * Compared case-insensitively since struct keys are, which also catches same-directory differences in case on Windows
      *
-     * @throws ImageMagick.VerificationException When ImageMagick cannot be reached or does not return a version
+     * @outputPaths Full output paths about to be written
+     * @message     Error message to throw with
+     *
+     * @throws ImageMagick.InputValidationException When outputPaths contains duplicates
      */
-    public void function verifyImageMagick() {
-        var result      = '';
-        var errorResult = '';
+    private void function ensureUniqueOutputs(required array outputPaths, required string message) {
+        var seen = {};
+        arguments.outputPaths.each((outputPath) => {
+            seen[outputPath] = true;
+        });
 
-        try {
-            cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = "identify -version",
-                variable      = "local.result",
-                errorVariable = "local.errorResult",
-                timeout       = getImageMagickTimeout()
-            );
-
-            if(!len(trim(result))) {
-                throw(
-                    type    = 'ImageMagick.VerificationException',
-                    message = 'ImageMagick did not return version information | #errorResult#'
-                );
-            }
-        }
-        catch(any e) {
-            imageLog.error('Error verifying imageMagick | #e.message#');
-            throw(
-                type    = 'ImageMagick.VerificationException',
-                message = 'Unable to verify ImageMagick is available | #e.message#'
-            );
+        if(structCount(seen) != arguments.outputPaths.len()) {
+            throw(type = 'ImageMagick.InputValidationException', message = arguments.message);
         }
     }
 
     /**
-     * Uses ImageMagick identify to check whether path points to a valid, readable image and report
-     * the coder/format (ex: PNG, JPEG, MVG) ImageMagick itself detected for its first frame, based on
-     * the file's actual content rather than its extension
+     * Normalize a path to forward slashes without a trailing slash
      *
-     * @path Full path to the image to check
+     * @path File or directory path
      *
-     * @return ImageMagick's uppercased format name for path
-     *
-     * @throws ImageMagick.InputValidationException When path is empty or does not exist
-     * @throws ImageMagick.IdentifyException        When ImageMagick reports path is not a valid image
+     * @return Normalized path
      */
-    public string function identify(required string path) {
-        validateArgs('identify', arguments);
-
-        var result      = '';
-        var errorResult = '';
-
-        try {
-            cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "identify",
-                    "-format",
-                    "%m",
-                    "#arguments.path#[0]"
-                ],
-                variable      = "local.result",
-                errorVariable = "local.errorResult",
-                timeout       = getImageMagickTimeout()
-            );
-
-            if(!len(trim(result))) {
-                throw(
-                    type    = 'ImageMagick.IdentifyException',
-                    message = '#arguments.path# is not a valid image | #errorResult#'
-                );
-            }
-        }
-        catch(any e) {
-            imageLog.error('Error identifying image | #e.message#');
-            throw(
-                type    = 'ImageMagick.IdentifyException',
-                message = '#arguments.path# is not a valid image | #e.message#'
-            );
-        }
-
-        return trim(result).ucase();
+    private string function normalizePath(required string path) {
+        return arguments.path.replace('\', '/', 'all').reReplace('/$', '');
     }
 
     /**
-     * Uses ImageMagick identify to read the pixel dimensions of an image's first frame
+     * Express value in larger units for a user-facing message, rounded to 2 decimals ex: inUnits(26214400, 1048576) -> 25
      *
-     * @path Full path to the image to check
+     * @value Value in base units ex: bytes, pixels
+     * @unit  Size of the larger unit in base units ex: 1048576 for MB
      *
-     * @return Struct of {width, height} in pixels
-     *
-     * @throws ImageMagick.InputValidationException When path is empty or does not exist
-     * @throws ImageMagick.IdentifyException        When ImageMagick fails to report dimensions for path
+     * @return Rounded value as a string
      */
-    public struct function getDimensions(required string path) {
-        validateArgs('getDimensions', arguments);
-
-        var result      = '';
-        var errorResult = '';
-
-        try {
-            cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "identify",
-                    "-format",
-                    "%wx%h",
-                    "#arguments.path#[0]"
-                ],
-                variable      = "local.result",
-                errorVariable = "local.errorResult",
-                timeout       = getImageMagickTimeout()
-            );
-
-            if(!reFind('^[0-9]+x[0-9]+$', trim(result))) {
-                throw(
-                    type    = 'ImageMagick.IdentifyException',
-                    message = 'ImageMagick failed to report dimensions for #arguments.path# | #errorResult#'
-                );
-            }
-        }
-        catch(any e) {
-            imageLog.error('Error reading dimensions of image | #e.message#');
-            throw(
-                type    = 'ImageMagick.IdentifyException',
-                message = 'Failed to read dimensions of #arguments.path# | #e.message#'
-            );
-        }
-
-        return {width: val(listFirst(trim(result), 'x')), height: val(listLast(trim(result), 'x'))};
-    }
-
-    /**
-     * Uses ImageMagick convert to strip metadata, adjust quality, and shrink-to-fit the source image, writing the result to outputPath
-     * Only shrinks the image if it exceeds the resize bound - images smaller than resize are left at their original dimensions
-     *
-     * @path       Full path to source image
-     * @outputPath Full path to output file including extension
-     * @quality    (Optional) 0-100 quality of image, defaults to 50
-     * @resize     (Optional) Max width/height in pixels to shrink to, defaults to 1200
-     * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag before it is stripped, defaults to false
-     *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 0 and 100, resize is not a positive number, or autoOrient is not a boolean
-     * @throws ImageMagick.ConversionException      When ImageMagick fails to produce the converted output
-     */
-    public void function convert(
-        required string path,
-        required string outputPath,
-        numeric quality    = 50,
-        numeric resize     = 1200,
-        boolean autoOrient = false
-    ) {
-        validateArgs('convert', arguments);
-
-        var result      = '';
-        var errorResult = '';
-
-        // -strip removes the EXIF orientation tag, so orientation must be applied to the pixels in the same pass
-        var commandArgs = [
-            'convert',
-            '-strip',
-            '-quality',
-            '#arguments.quality#',
-            arguments.path
-        ];
-        if(arguments.autoOrient) {
-            commandArgs.append('-auto-orient');
-        }
-        commandArgs.append(
-            [
-                '-resize',
-                '#arguments.resize#x#arguments.resize#>',
-                arguments.outputPath
-            ],
-            true
-        );
-
-        try {
-            cfexecute(
-                name          = getImageMagickPath(),
-                arguments     = commandArgs,
-                variable      = "local.result",
-                errorVariable = "local.errorResult",
-                timeout       = getImageMagickTimeout()
-            );
-
-            if(!fileExists(arguments.outputPath)) {
-                throw(
-                    type    = 'ImageMagick.ConversionException',
-                    message = 'ImageMagick failed to create converted output at #arguments.outputPath# | #errorResult#'
-                );
-            }
-        }
-        catch(any e) {
-            imageLog.error('Error converting image to #arguments.outputPath# | #e.message#');
-            throw(
-                type    = 'ImageMagick.ConversionException',
-                message = 'Failed to convert image #arguments.path# to #arguments.outputPath# | #e.message#'
-            );
-        }
-    }
-
-    /**
-     * Uses ImageMagick to crop the source image to exact dimensions: scales to fully cover the
-     * target box (preserving aspect ratio) then crops the overflow from the center. Unlike
-     * resize()'s forced-dimensions mode, this never distorts the image.
-     *
-     * @path       Full path to source image
-     * @outputPath Full path to output file including extension
-     * @width      Target width in pixels
-     * @height     Target height in pixels
-     *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, or width/height is not a positive number
-     * @throws ImageMagick.CropException            When ImageMagick fails to produce the cropped output
-     */
-    public void function crop(
-        required string path,
-        required string outputPath,
-        required numeric width,
-        required numeric height
-    ) {
-        validateArgs('crop', arguments);
-
-        var result      = '';
-        var errorResult = '';
-
-        try {
-            cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "convert",
-                    "-strip",
-                    arguments.path,
-                    "-resize",
-                    "#arguments.width#x#arguments.height#^",
-                    "-gravity",
-                    "center",
-                    "-extent",
-                    "#arguments.width#x#arguments.height#",
-                    arguments.outputPath
-                ],
-                variable      = "local.result",
-                errorVariable = "local.errorResult",
-                timeout       = getImageMagickTimeout()
-            );
-
-            if(!fileExists(arguments.outputPath)) {
-                throw(
-                    type    = 'ImageMagick.CropException',
-                    message = 'ImageMagick failed to create cropped output at #arguments.outputPath# | #errorResult#'
-                );
-            }
-        }
-        catch(any e) {
-            imageLog.error('Error cropping image to #arguments.outputPath# | #e.message#');
-            throw(
-                type    = 'ImageMagick.CropException',
-                message = 'Failed to crop image #arguments.path# to #arguments.outputPath# | #e.message#'
-            );
-        }
-    }
-
-    /**
-     * Uses ImageMagick to physically rotate/flip the image according to its EXIF orientation tag
-     * and remove that tag, writing the result to outputPath. Photos uploaded directly from phone
-     * cameras are frequently stored sideways/upside-down with only an EXIF flag marking the
-     * correct orientation - most browsers and image libraries ignore that flag.
-     *
-     * @path       Full path to source image
-     * @outputPath Full path to output file including extension
-     *
-     * @throws ImageMagick.InputValidationException When path does not exist or outputPath is empty
-     * @throws ImageMagick.OrientException          When ImageMagick fails to produce the oriented output
-     */
-    public void function autoOrient(required string path, required string outputPath) {
-        validateArgs('autoOrient', arguments);
-
-        var result      = '';
-        var errorResult = '';
-
-        try {
-            cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "convert",
-                    arguments.path,
-                    "-auto-orient",
-                    arguments.outputPath
-                ],
-                variable      = "local.result",
-                errorVariable = "local.errorResult",
-                timeout       = getImageMagickTimeout()
-            );
-
-            if(!fileExists(arguments.outputPath)) {
-                throw(
-                    type    = 'ImageMagick.OrientException',
-                    message = 'ImageMagick failed to create auto-oriented output at #arguments.outputPath# | #errorResult#'
-                );
-            }
-        }
-        catch(any e) {
-            imageLog.error('Error auto-orienting image to #arguments.outputPath# | #e.message#');
-            throw(
-                type    = 'ImageMagick.OrientException',
-                message = 'Failed to auto-orient image #arguments.path# to #arguments.outputPath# | #e.message#'
-            );
-        }
-    }
-
-    /**
-     * Resize the incoming image to one or more output sizes
-     *
-     * If both width and height are provided for an output, the image is forced to those exact dimensions (aspect ratio ignored)
-     * If only one of width/height is provided, the image is scaled to that dimension with aspect ratio preserved. 
-     * If a resized output file already exists at the destination path, it is intentionally overwritten
-     *
-     * @path    Full path to source image
-     * @outputs Array of structs of resize destination and width/height of resized image ex: [{resizeDir: '../', width: 100}, {resizeDir: '../', height: 200}, {resizeDir: '../', width: 100, height: 200}]
-     *
-     * @return Array of full paths to the successfully resized output files, in outputs order
-     *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputs is empty, or an output entry is missing resizeDir, is missing both width and height, or has a non-positive width/height
-     * @throws ImageMagick.ResizeException          When ImageMagick fails to produce one of the resized outputs
-     */
-    public array function resize(required string path, required array outputs) {
-        // Normalize before validating so fileExistsValidator checks the same path used to build outputs below
-        arguments.path = arguments.path.replace('\', '/', 'all');
-
-        validateArgs('resize', arguments);
-
-        // Extract the filename
-        var normalizedPath = arguments.path;
-        var fileName       = listLast(normalizedPath, '/');
-
-        // Build every output's geometry string and destination path up front so we fail before resizing anything
-        var preparedOutputs = arguments.outputs.map((output) => buildResizeOutput(output, fileName));
-
-        var resizedPaths = [];
-
-        try {
-            preparedOutputs.each((prepared) => {
-                var result      = '';
-                var errorResult = '';
-
-                cfexecute(
-                    name      = getImageMagickPath(),
-                    arguments = [
-                        "convert",
-                        "-strip",
-                        normalizedPath,
-                        "-resize",
-                        prepared.geometry,
-                        prepared.outputPath
-                    ],
-                    variable      = "local.result",
-                    errorVariable = "local.errorResult",
-                    timeout       = getImageMagickTimeout()
-                );
-
-                if(!fileExists(prepared.outputPath)) {
-                    throw(
-                        type    = 'ImageMagick.ResizeException',
-                        message = 'ImageMagick failed to create resized output at #prepared.outputPath# | #errorResult#'
-                    );
-                }
-
-                resizedPaths.append(prepared.outputPath);
-            });
-        }
-        catch(any e) {
-            imageLog.error('Error resizing image | #e.message#');
-
-            // Remove any outputs that were already resized before the failure
-            resizedPaths.each((resizedPath) => {
-                if(fileExists(resizedPath)) {
-                    fileDelete(resizedPath);
-                }
-            });
-
-            throw(
-                type    = 'ImageMagick.ResizeException',
-                message = 'Failed to resize image #arguments.path# | #e.message#'
-            );
-        }
-
-        return resizedPaths;
-    }
-
-    /**
-     * Builds a resize() output's ImageMagick geometry string and destination path
-     *
-     * @output   The output struct, already validated ex: {resizeDir: '../', width: 100, height: 200}
-     * @fileName Source image filename to use for the destination file
-     *
-     * @return Struct of {outputPath, geometry}
-     */
-    private struct function buildResizeOutput(required struct output, required string fileName) {
-        var hasWidth  = arguments.output.keyExists('width') && len(arguments.output.width);
-        var hasHeight = arguments.output.keyExists('height') && len(arguments.output.height);
-        var geometry  = '';
-
-        if(hasWidth && hasHeight) {
-            geometry = '#arguments.output.width#x#arguments.output.height#!';
-        }
-        else if(hasWidth) {
-            geometry = '#arguments.output.width#';
-        }
-        else {
-            geometry = 'x#arguments.output.height#';
-        }
-
-        var resizeDir = arguments.output.resizeDir.replace('\', '/', 'all').reReplace('/$', '');
-
-        return {outputPath: '#resizeDir#/#arguments.fileName#', geometry: geometry};
-    }
-
-    /**
-     * Validate the incoming image upload
-     * If valid, convert it to each requested output and move it to the corresponding upload directory
-     *
-     * @formField  The form field the image was uploaded under
-     * @outputs    Array of structs of upload destination and conversion type ex: [{uploadDir: uploadPath, type: 'webp'}]
-     * @extensions (Optional) Comma-delimited list of allowed source file extensions, defaults to 'png,jpg,jpeg,webp,heic'
-     * @autoOrient (Optional) Rotate/flip each output upright using the upload's EXIF orientation tag, defaults to false
-     *
-     * @return Filename - the converted file name's UUID (without extension)
-     *
-     * @throws ImageMagick.InputValidationException  When formField is empty, outputs is empty, an output entry is missing uploadDir or type, or autoOrient is not a boolean
-     * @throws ImageMagick.UploadValidationException When no file is uploaded, the upload is not a valid image, the upload's extension is not in extensions, or an output fails to convert
-     */
-    public string function validateUpload(
-        required string formField,
-        required array outputs,
-        string extensions  = 'png,jpg,jpeg,webp,heic',
-        boolean autoOrient = false
-    ) {
-        validateArgs('validateUpload', arguments);
-
-        // Attempt file upload to temp directory
-        try {
-            var uploadArgs = {
-                destination: getTempDirectory(),
-                fileField  : arguments.formField,
-                strict     : true
-            };
-
-            var mimeTypes = listToArray(arguments.extensions, ',')
-                .map((ext) => getExtToMime()[ext.trim().lcase()])
-                .toList(',');
-
-            if(getCfmlEngine() == 'lucee') {
-                uploadArgs.accept     = mimeTypes;
-                uploadArgs.onConflict = 'makeUnique';
-            }
-            else {
-                uploadArgs.mimeType     = mimeTypes;
-                uploadArgs.nameConflict = 'makeUnique';
-            }
-
-            cffile(
-                action              = "upload",
-                attributeCollection = uploadArgs,
-                accept              = mimeTypes,
-                result              = "upload"
-            );
-        }
-        catch(any e) {
-            throw(type = 'ImageMagick.UploadValidationException', message = 'Invalid image upload | #e.message#');
-        }
-
-        // Get the uploaded temp path
-        var tempPath = '#upload.serverdirectory#/#upload.serverfile#'.replace('\', '/', 'all');
-
-        // Check if valid image and get its actual detected format
-        var detectedFormat = '';
-        try {
-            detectedFormat = identify(tempPath);
-        }
-        catch(any e) {
-            fileDelete(tempPath);
-            throw(type = 'ImageMagick.UploadValidationException', message = 'Invalid image upload | #e.message#');
-        }
-
-        // Check if an allowed extension
-        if(!listFindNoCase(arguments.extensions, upload.serverfileext)) {
-            fileDelete(tempPath);
-            throw(
-                type    = 'ImageMagick.UploadValidationException',
-                message = 'Invalid image upload: extension #upload.serverfileext# is not allowed'
-            );
-        }
-
-        // Confirm the format ImageMagick actually detected for the upload's content matches what its extension claims
-        var expectedFormat = getExtToFormat()[upload.serverfileext.lcase()];
-        if(detectedFormat != expectedFormat) {
-            fileDelete(tempPath);
-            throw(
-                type    = 'ImageMagick.UploadValidationException',
-                message = 'Invalid image upload: detected format #detectedFormat# does not match extension #upload.serverfileext#'
-            );
-        }
-
-        // Create UUID for uploaded file
-        var newName = createUUID().replace('-', '', 'all');
-
-        // For each output, attempt to convert and move to destination upload directory
-        // Track what's been converted in case of failure
-        var convertedPaths   = [];
-        var shouldAutoOrient = arguments.autoOrient;
-        try {
-            arguments.outputs.each((output) => {
-                var uploadDir  = output.uploadDir.replace('\', '/', 'all').reReplace('/$', '');
-                var outputPath = '#uploadDir#/#newName#.#output.type#';
-
-                convert(
-                    path       = tempPath,
-                    outputPath = outputPath,
-                    autoOrient = shouldAutoOrient
-                );
-
-                convertedPaths.append(outputPath);
-            });
-        }
-        catch(any e) {
-            // Remove any outputs that were already converted before the failure
-            convertedPaths.each((convertedPath) => {
-                if(fileExists(convertedPath)) {
-                    fileDelete(convertedPath);
-                }
-            });
-
-            throw(
-                type    = 'ImageMagick.UploadValidationException',
-                message = 'Failed to process image upload | #e.message#'
-            );
-        }
-        finally {
-            // Delete the temp upload file
-            if(fileExists(tempPath)) {
-                fileDelete(tempPath);
-            }
-        }
-
-        // Return the new name
-        return newName;
+    private string function inUnits(required numeric value, required numeric unit) {
+        return '#round(arguments.value / arguments.unit * 100) / 100#';
     }
 
 }

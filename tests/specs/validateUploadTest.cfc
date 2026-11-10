@@ -2,6 +2,7 @@ component extends="tests.resources.baseTest" {
 
     function beforeAll() {
         super.beforeAll();
+        imageService = getInstance('Helpers@ImageMagick');
     }
 
     function afterAll() {
@@ -9,18 +10,16 @@ component extends="tests.resources.baseTest" {
     }
 
     /**
-     * POSTs a a real muiltipart upload to the coldbox endpoint to validate the function validateUpload which expects the formfield
+     * POSTs a real multipart upload to the coldbox endpoint to validate the function validateUpload which expects the formfield
      *
-     * @filePath   Full path to the file to upload
-     * @outputs    Array of {uploadDir, type} structs, same shape validateUpload() expects
-     * @extensions (Optional) Comma-delimited list of allowed extensions
-     * @autoOrient (Optional) Whether to rotate the upload upright using its EXIF orientation tag
+     * @filePath Full path to the file to upload
+     * @outputs  Array of {uploadDir, type} structs, same shape validateUpload() expects
+     * @fields   (Optional) Struct of optional validateUpload() arguments to post ex: {extensions: 'png', autoOrient: true}
      */
     private struct function postUpload(
         required string filePath,
         required array outputs,
-        string extensions,
-        boolean autoOrient
+        struct fields = {}
     ) {
         var uploadUrl = 'http://127.0.0.1:60299/tests/index.cfm/upload';
 
@@ -35,18 +34,11 @@ component extends="tests.resources.baseTest" {
                 name  = "outputs",
                 value = serializeJSON(arguments.outputs)
             );
-            if(structKeyExists(arguments, 'extensions')) {
+            for(var name in arguments.fields) {
                 cfhttpparam(
                     type  = "formfield",
-                    name  = "extensions",
-                    value = arguments.extensions
-                );
-            }
-            if(structKeyExists(arguments, 'autoOrient')) {
-                cfhttpparam(
-                    type  = "formfield",
-                    name  = "autoOrient",
-                    value = arguments.autoOrient
+                    name  = name,
+                    value = arguments.fields[name]
                 );
             }
             cfhttpparam(
@@ -59,16 +51,28 @@ component extends="tests.resources.baseTest" {
         return deserializeJSON(httpResult.fileContent);
     }
 
+    /**
+     * Counts the per-upload temp directories validateUpload() creates, to confirm they're cleaned up
+     */
+    private numeric function countUploadTempDirs() {
+        return directoryList(
+            getTempDirectory(),
+            false,
+            'name',
+            'imagemagick-upload-*'
+        ).len();
+    }
+
     function run() {
         describe('validateUpload()', () => {
             beforeEach(() => {
                 setup();
             });
 
-            it('Validates and converts a real uploaded jpg', () => {
+            it('Validates a real .jpeg upload and converts it under a new UUID filename', () => {
                 var uploadDir = newDir();
                 var response  = postUpload(
-                    filePath = expandPath('/tests/resources/jpg_example.jpg'),
+                    filePath = expandPath('/tests/resources/jpeg_example.jpeg'),
                     outputs  = [{uploadDir: uploadDir, type: 'jpg'}]
                 );
 
@@ -88,28 +92,37 @@ component extends="tests.resources.baseTest" {
                 );
 
                 expect(response.success).toBeTrue();
-                expect(fileExists(uploadDir & '/' & response.filename & '.jpg')).toBeTrue();
-                expect(fileExists(uploadDir & '/' & response.filename & '.webp')).toBeTrue();
+                expect(imageService.identify(uploadDir & '/' & response.filename & '.jpg')).toBe('JPEG');
+                expect(imageService.identify(uploadDir & '/' & response.filename & '.webp')).toBe('WEBP');
             });
 
-            it('Rotates an upload upright using its EXIF orientation tag when autoOrient is true', () => {
-                // oriented_example.jpg is 300x200 with EXIF Orientation=6 (rotate 90 CW)
-                var uploadDir = newDir();
-                var response  = postUpload(
-                    filePath   = expandPath('/tests/resources/oriented_example.jpg'),
-                    outputs    = [{uploadDir: uploadDir, type: 'jpg'}],
-                    autoOrient = true
+            it('Allows whitespace and mixed case in the extensions list', () => {
+                var response = postUpload(
+                    filePath = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs  = [{uploadDir: newDir(), type: 'jpg'}],
+                    fields   = {extensions: 'png, JPG'}
                 );
 
                 expect(response.success).toBeTrue();
-                var dimensions = getInstance('Helpers@ImageMagick').getDimensions(
-                    uploadDir & '/' & response.filename & '.jpg'
-                );
-                expect(dimensions.width).toBe(200);
-                expect(dimensions.height).toBe(300);
             });
 
-            it('Does not rotate an upload when autoOrient is omitted', () => {
+            it('Removes its temp upload directory whether the upload succeeds or is rejected', () => {
+                var before = countUploadTempDirs();
+
+                postUpload(
+                    filePath = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs  = [{uploadDir: newDir(), type: 'jpg'}]
+                );
+                postUpload(
+                    filePath = expandPath('/tests/resources/invalid_example.jpg'),
+                    outputs  = [{uploadDir: newDir(), type: 'jpg'}]
+                );
+
+                expect(countUploadTempDirs()).toBe(before);
+            });
+
+            // oriented_example.jpg is 300x200 with EXIF Orientation=6 (rotate 90 CW)
+            it('By default, strips metadata without rotating', () => {
                 var uploadDir = newDir();
                 var response  = postUpload(
                     filePath = expandPath('/tests/resources/oriented_example.jpg'),
@@ -117,19 +130,30 @@ component extends="tests.resources.baseTest" {
                 );
 
                 expect(response.success).toBeTrue();
-                var dimensions = getInstance('Helpers@ImageMagick').getDimensions(
-                    uploadDir & '/' & response.filename & '.jpg'
+                var outputPath = uploadDir & '/' & response.filename & '.jpg';
+                expect(getOrientation(outputPath)).toBe('Undefined');
+                expect(imageService.getDimensions(outputPath)).toBe({width: 300, height: 200});
+            });
+
+            it('Passes strip and autoOrient through to each conversion', () => {
+                var uploadDir = newDir();
+                var response  = postUpload(
+                    filePath = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputs  = [{uploadDir: uploadDir, type: 'jpg'}],
+                    fields   = {strip: false, autoOrient: true}
                 );
-                expect(dimensions.width).toBe(300);
-                expect(dimensions.height).toBe(200);
+
+                expect(response.success).toBeTrue();
+                var outputPath = uploadDir & '/' & response.filename & '.jpg';
+                expect(getOrientation(outputPath)).toBe('TopLeft');
+                expect(imageService.getDimensions(outputPath)).toBe({width: 200, height: 300});
             });
 
             it('Rejects an upload with a disallowed extension', () => {
-                var uploadDir = newDir();
-                var response  = postUpload(
-                    filePath   = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs    = [{uploadDir: uploadDir, type: 'jpg'}],
-                    extensions = 'png'
+                var response = postUpload(
+                    filePath = expandPath('/tests/resources/jpg_example.jpg'),
+                    outputs  = [{uploadDir: newDir(), type: 'jpg'}],
+                    fields   = {extensions: 'png'}
                 );
 
                 expect(response.success).toBeFalse();
@@ -137,10 +161,9 @@ component extends="tests.resources.baseTest" {
             });
 
             it('Rejects an upload that is not actually a valid image', () => {
-                var uploadDir = newDir();
-                var response  = postUpload(
+                var response = postUpload(
                     filePath = expandPath('/tests/resources/invalid_example.jpg'),
-                    outputs  = [{uploadDir: uploadDir, type: 'jpg'}]
+                    outputs  = [{uploadDir: newDir(), type: 'jpg'}]
                 );
 
                 expect(response.success).toBeFalse();
@@ -151,34 +174,38 @@ component extends="tests.resources.baseTest" {
                 // spoofed_example.png is real jpg_example.jpg bytes saved under a .png name - a real
                 // image ImageMagick would identify as JPEG despite the extension claiming png, the same
                 // extension/content mismatch a crafted MVG/SVG payload disguised as a raster image would rely on
-                var uploadDir = newDir();
-                var response  = postUpload(
+                var response = postUpload(
                     filePath = expandPath('/tests/resources/spoofed_example.png'),
-                    outputs  = [{uploadDir: uploadDir, type: 'png'}]
+                    outputs  = [{uploadDir: newDir(), type: 'png'}]
                 );
 
                 expect(response.success).toBeFalse();
                 expect(response.type).toBe('ImageMagick.UploadValidationException');
             });
 
-            it('Rejects an upload whose uploadDir is a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
+            it('Rejects an upload over maxFileSize', () => {
                 var response = postUpload(
                     filePath = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs  = [{uploadDir: '\\attacker.test\share', type: 'jpg'}]
+                    outputs  = [{uploadDir: newDir(), type: 'jpg'}],
+                    fields   = {maxFileSize: 100}
                 );
 
                 expect(response.success).toBeFalse();
-                expect(response.type).toBe('ImageMagick.InputValidationException');
+                expect(response.type).toBe('ImageMagick.UploadValidationException');
             });
 
-            it('Rejects an upload whose uploadDir starts with a pipe (ImageMagick PIPE coder command execution)', () => {
-                var response = postUpload(
+            it('Rejects an upload over maxPixels before converting it', () => {
+                // jpg_example.jpg is 200x200 = 40000 pixels
+                var uploadDir = newDir();
+                var response  = postUpload(
                     filePath = expandPath('/tests/resources/jpg_example.jpg'),
-                    outputs  = [{uploadDir: '|touch /tmp/pwned', type: 'jpg'}]
+                    outputs  = [{uploadDir: uploadDir, type: 'jpg'}],
+                    fields   = {maxPixels: 39999}
                 );
 
                 expect(response.success).toBeFalse();
-                expect(response.type).toBe('ImageMagick.InputValidationException');
+                expect(response.type).toBe('ImageMagick.UploadValidationException');
+                expect(directoryList(uploadDir).len()).toBe(0);
             });
         });
     }

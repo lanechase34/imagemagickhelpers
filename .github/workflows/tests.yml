@@ -8,12 +8,10 @@ permissions:
 on:
   push:
     branches:
-      - development
-      - main
+      - master
   pull_request:
     branches:
-      - development
-      - main
+      - master
   workflow_dispatch:
 
 # Cancel superseded runs on the same branch/PR so stale pushes don't hold runners
