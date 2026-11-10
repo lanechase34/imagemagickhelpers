@@ -35,6 +35,8 @@
         "coldbox",
         "modules",
         "config",
+        "docs",
+        "logs",
         "/server*.json"
     ],
     "scripts":{

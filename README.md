@@ -133,4 +133,4 @@ Each upload is handled in its own UUID-named temp directory under a UUID filenam
 
 Every function validates its arguments and throws a typed `ImageMagick.*Exception` (e.g. `ImageMagick.ConversionException`, `ImageMagick.UploadValidationException`) on failure - wrap calls in `try`/`catch` where you need to handle those.
 
-For the full list of functions, their arguments, return values, and exceptions, see [docs/functions.md](docs/functions.md).
+For the full list of functions, their arguments, return values, and exceptions, see [docs/functions.md](https://github.com/lanechase34/imagemagickhelpers/blob/master/docs/functions.md).

@@ -32,7 +32,7 @@
 		{
             "label": "Github Actions Tests",
             "type": "shell",
-            "command": "act -W '.github/workflows/tests.yml' -P ubuntu-24.04=ghcr.io/catthehacker/ubuntu:act-24.04 --rm --pull=false",
+            "command": "act -W '.github/workflows/tests.yml' -P ubuntu-24.04=ghcr.io/catthehacker/ubuntu:act-24.04 --rm --pull=false --network bridge --artifact-server-path '${workspaceFolder}/.artifacts'",
             "group": {
                 "kind": "test"
             },
