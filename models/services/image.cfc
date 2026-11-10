@@ -222,34 +222,47 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      * @outputPath Full path to output file including extension
      * @quality    (Optional) 0-100 quality of image, defaults to 50
      * @resize     (Optional) Max width/height in pixels to shrink to, defaults to 1200
+     * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag before it is stripped, defaults to false
      *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 0 and 100, or resize is not a positive number
+     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 0 and 100, resize is not a positive number, or autoOrient is not a boolean
      * @throws ImageMagick.ConversionException      When ImageMagick fails to produce the converted output
      */
     public void function convert(
         required string path,
         required string outputPath,
-        numeric quality = 50,
-        numeric resize  = 1200
+        numeric quality    = 50,
+        numeric resize     = 1200,
+        boolean autoOrient = false
     ) {
         validateArgs('convert', arguments);
 
         var result      = '';
         var errorResult = '';
 
+        // -strip removes the EXIF orientation tag, so orientation must be applied to the pixels in the same pass
+        var commandArgs = [
+            'convert',
+            '-strip',
+            '-quality',
+            '#arguments.quality#',
+            arguments.path
+        ];
+        if(arguments.autoOrient) {
+            commandArgs.append('-auto-orient');
+        }
+        commandArgs.append(
+            [
+                '-resize',
+                '#arguments.resize#x#arguments.resize#>',
+                arguments.outputPath
+            ],
+            true
+        );
+
         try {
             cfexecute(
-                name      = getImageMagickPath(),
-                arguments = [
-                    "convert",
-                    "-strip",
-                    "-quality",
-                    "#arguments.quality#",
-                    arguments.path,
-                    "-resize",
-                    "#arguments.resize#x#arguments.resize#>",
-                    arguments.outputPath
-                ],
+                name          = getImageMagickPath(),
+                arguments     = commandArgs,
                 variable      = "local.result",
                 errorVariable = "local.errorResult",
                 timeout       = getImageMagickTimeout()
@@ -493,16 +506,18 @@ component singleton accessors="true" hint="Service layer for interacting with Im
      * @formField  The form field the image was uploaded under
      * @outputs    Array of structs of upload destination and conversion type ex: [{uploadDir: uploadPath, type: 'webp'}]
      * @extensions (Optional) Comma-delimited list of allowed source file extensions, defaults to 'png,jpg,jpeg,webp,heic'
+     * @autoOrient (Optional) Rotate/flip each output upright using the upload's EXIF orientation tag, defaults to false
      *
      * @return Filename - the converted file name's UUID (without extension)
      *
-     * @throws ImageMagick.InputValidationException  When formField is empty, outputs is empty, or an output entry is missing uploadDir or type
+     * @throws ImageMagick.InputValidationException  When formField is empty, outputs is empty, an output entry is missing uploadDir or type, or autoOrient is not a boolean
      * @throws ImageMagick.UploadValidationException When no file is uploaded, the upload is not a valid image, the upload's extension is not in extensions, or an output fails to convert
      */
     public string function validateUpload(
         required string formField,
         required array outputs,
-        string extensions = 'png,jpg,jpeg,webp,heic'
+        string extensions  = 'png,jpg,jpeg,webp,heic',
+        boolean autoOrient = false
     ) {
         validateArgs('validateUpload', arguments);
 
@@ -575,13 +590,18 @@ component singleton accessors="true" hint="Service layer for interacting with Im
 
         // For each output, attempt to convert and move to destination upload directory
         // Track what's been converted in case of failure
-        var convertedPaths = [];
+        var convertedPaths   = [];
+        var shouldAutoOrient = arguments.autoOrient;
         try {
             arguments.outputs.each((output) => {
                 var uploadDir  = output.uploadDir.replace('\', '/', 'all').reReplace('/$', '');
                 var outputPath = '#uploadDir#/#newName#.#output.type#';
 
-                convert(path = tempPath, outputPath = outputPath);
+                convert(
+                    path       = tempPath,
+                    outputPath = outputPath,
+                    autoOrient = shouldAutoOrient
+                );
 
                 convertedPaths.append(outputPath);
             });

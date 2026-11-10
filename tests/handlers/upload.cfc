@@ -11,11 +11,13 @@ component {
         try {
             var outputs    = structKeyExists(rc, 'outputs') ? deserializeJSON(rc.outputs) : [];
             var extensions = structKeyExists(rc, 'extensions') ? rc.extensions : 'png,jpg,jpeg,webp,heic';
+            var autoOrient = structKeyExists(rc, 'autoOrient') ? rc.autoOrient : false;
 
             result.filename = imageService.validateUpload(
                 formField  = 'file',
                 outputs    = outputs,
-                extensions = extensions
+                extensions = extensions,
+                autoOrient = autoOrient
             );
         }
         catch(any e) {

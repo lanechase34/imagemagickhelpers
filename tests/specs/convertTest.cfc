@@ -53,6 +53,36 @@ component extends="tests.resources.baseTest" {
                 expect(fileExists(outputPath)).toBeTrue();
             });
 
+            it('Rotates an image upright using its EXIF orientation tag when autoOrient is true', () => {
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
+
+                // oriented_example.jpg is 300x200 with EXIF Orientation=6 (rotate 90 CW)
+                imageService.convert(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = outputPath,
+                    autoOrient = true
+                );
+
+                expect(fileExists(outputPath)).toBeTrue();
+                var dimensions = imageService.getDimensions(outputPath);
+                expect(dimensions.width).toBe(200);
+                expect(dimensions.height).toBe(300);
+            });
+
+            it('Does not rotate an image with an EXIF orientation tag by default', () => {
+                var outputPath = tempDir & '/' & createUUID() & '.jpg';
+
+                imageService.convert(
+                    path       = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputPath = outputPath
+                );
+
+                expect(fileExists(outputPath)).toBeTrue();
+                var dimensions = imageService.getDimensions(outputPath);
+                expect(dimensions.width).toBe(300);
+                expect(dimensions.height).toBe(200);
+            });
+
             it('Throws for an empty path', () => {
                 expect(() => imageService.convert(path = '', outputPath = tempDir & '/out.jpg')).toThrow('ImageMagick.InputValidationException');
             });

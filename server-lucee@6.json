@@ -12,14 +12,14 @@
         "rewrites":{
             "enable":"true"
         },
-		"webroot": ""
+        "webroot":""
     },
     "openBrowser":"false",
-	"JVM":{
+    "JVM":{
         "heapSize":"768",
         "javaVersion":"openjdk21_jre"
     },
-	"cfconfig": {
-		"file" : ".cfconfig.json"
-	}
+    "cfconfig":{
+        "file":".cfconfig.json"
+    }
 }

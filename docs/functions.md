@@ -13,11 +13,11 @@ All functions validate their arguments before doing any work and throw `ImageMag
 - [verifyImageMagick()](#verifyimagemagick)
 - [identify(path)](#identifypath)
 - [getDimensions(path)](#getdimensionspath)
-- [convert(path, outputPath, quality, resize)](#convertpath-outputpath-quality-resize)
+- [convert(path, outputPath, quality, resize, autoOrient)](#convertpath-outputpath-quality-resize-autoorient)
 - [crop(path, outputPath, width, height)](#croppath-outputpath-width-height)
 - [autoOrient(path, outputPath)](#autoorientpath-outputpath)
 - [resize(path, outputs)](#resizepath-outputs)
-- [validateUpload(formField, outputs, extensions)](#validateuploadformfield-outputs-extensions)
+- [validateUpload(formField, outputs, extensions, autoOrient)](#validateuploadformfield-outputs-extensions-autoorient)
 
 ---
 
@@ -93,9 +93,9 @@ var dimensions = imageService.getDimensions('/tmp/uploads/photo.jpg');
 
 ---
 
-## convert(path, outputPath, quality, resize)
+## convert(path, outputPath, quality, resize, autoOrient)
 
-Strips metadata, adjusts quality, and shrink-to-fits the source image, writing the result to `outputPath`. The output format is determined by `outputPath`'s extension. Only shrinks the image if it exceeds `resize` - images already smaller than that bound are left at their original dimensions.
+Strips metadata, adjusts quality, and shrink-to-fits the source image, writing the result to `outputPath`. The output format is determined by `outputPath`'s extension. Only shrinks the image if it exceeds `resize` - images already smaller than that bound are left at their original dimensions. Because metadata is stripped, any EXIF orientation tag is lost - pass `autoOrient = true` to bake that orientation into the pixels first (the same rotation as [`autoOrient()`](#autoorientpath-outputpath), in a single pass).
 
 **Arguments**
 
@@ -105,12 +105,13 @@ Strips metadata, adjusts quality, and shrink-to-fits the source image, writing t
 | outputPath | string  | yes      | -       | Full path to output file, including extension |
 | quality    | numeric | no       | `50`    | 0-100 output quality                          |
 | resize     | numeric | no       | `1200`  | Max width/height in pixels to shrink to       |
+| autoOrient | boolean | no       | `false` | Rotate/flip upright using EXIF orientation    |
 
 **Returns:** nothing (`void`)
 
 **Throws**
 
-- `ImageMagick.InputValidationException` - `path` does not exist, `outputPath` is empty, `quality` is not between 0 and 100, or `resize` is not a positive number
+- `ImageMagick.InputValidationException` - `path` does not exist, `outputPath` is empty, `quality` is not between 0 and 100, `resize` is not a positive number, or `autoOrient` is not a boolean
 - `ImageMagick.ConversionException` - ImageMagick failed to produce the converted output
 
 **Example**
@@ -120,7 +121,8 @@ imageService.convert(
     path       = '/tmp/uploads/photo.jpg',
     outputPath = '/var/www/images/photo.webp',
     quality    = 75,
-    resize     = 1600
+    resize     = 1600,
+    autoOrient = true
 );
 ```
 
@@ -226,9 +228,9 @@ var resizedPaths = imageService.resize(
 
 ---
 
-## validateUpload(formField, outputs, extensions)
+## validateUpload(formField, outputs, extensions, autoOrient)
 
-Handles an entire image upload flow in one call from within a handler: uploads the file from `formField` to a temp directory, verifies it's a genuinely valid image (not just a spoofed extension), checks its extension against `extensions`, then converts it to each requested output type/directory via [`convert()`](#convertpath-outputpath-quality-resize) using a newly generated UUID as the filename. The temp upload is always cleaned up. If any output fails to convert, all outputs already converted in this call are deleted before the exception is thrown.
+Handles an entire image upload flow in one call from within a handler: uploads the file from `formField` to a temp directory, verifies it's a genuinely valid image (not just a spoofed extension), checks its extension against `extensions`, then converts it to each requested output type/directory via [`convert()`](#convertpath-outputpath-quality-resize-autoorient) using a newly generated UUID as the filename. The temp upload is always cleaned up. If any output fails to convert, all outputs already converted in this call are deleted before the exception is thrown.
 
 **Arguments**
 
@@ -237,12 +239,13 @@ Handles an entire image upload flow in one call from within a handler: uploads t
 | formField  | string | yes      | -                          | The form field name the image was uploaded under                                                                        |
 | outputs    | array  | yes      | -                          | Array of structs (1-10), each `{uploadDir: string, type: string}` - `type` is the output extension (e.g. `webp`, `jpg`) |
 | extensions | string | no       | `'png,jpg,jpeg,webp,heic'` | Comma-delimited list of allowed source file extensions                                                                  |
+| autoOrient | boolean | no      | `false`                    | Rotate/flip each output upright using the upload's EXIF orientation tag (recommended for phone camera uploads)          |
 
 **Returns:** string - the converted files' shared UUID filename, without extension. Combine with each output's `uploadDir`/`type` to get the full path.
 
 **Throws**
 
-- `ImageMagick.InputValidationException` - `formField` is empty, `outputs` is empty, or an output entry is missing `uploadDir` or `type`
+- `ImageMagick.InputValidationException` - `formField` is empty, `outputs` is empty, an output entry is missing `uploadDir` or `type`, or `autoOrient` is not a boolean
 - `ImageMagick.UploadValidationException` - no file was uploaded, the upload is not a valid image, the upload's extension is not in `extensions`, or an output failed to convert
 
 **Example**
@@ -256,7 +259,8 @@ function uploadPhoto(event, rc, prc) {
             {uploadDir: '/var/www/images/original', type: 'jpg'},
             {uploadDir: '/var/www/images/webp', type: 'webp'}
         ],
-        extensions = 'png,jpg,jpeg'
+        extensions = 'png,jpg,jpeg',
+        autoOrient = true
     );
 
     // fileName = "3f2a9c1e4b7d4a6c9e1f2a3b4c5d6e7f"

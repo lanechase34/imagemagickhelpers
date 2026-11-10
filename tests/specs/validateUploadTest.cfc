@@ -14,11 +14,13 @@ component extends="tests.resources.baseTest" {
      * @filePath   Full path to the file to upload
      * @outputs    Array of {uploadDir, type} structs, same shape validateUpload() expects
      * @extensions (Optional) Comma-delimited list of allowed extensions
+     * @autoOrient (Optional) Whether to rotate the upload upright using its EXIF orientation tag
      */
     private struct function postUpload(
         required string filePath,
         required array outputs,
-        string extensions
+        string extensions,
+        boolean autoOrient
     ) {
         var uploadUrl = 'http://127.0.0.1:60299/tests/index.cfm/upload';
 
@@ -38,6 +40,13 @@ component extends="tests.resources.baseTest" {
                     type  = "formfield",
                     name  = "extensions",
                     value = arguments.extensions
+                );
+            }
+            if(structKeyExists(arguments, 'autoOrient')) {
+                cfhttpparam(
+                    type  = "formfield",
+                    name  = "autoOrient",
+                    value = arguments.autoOrient
                 );
             }
             cfhttpparam(
@@ -81,6 +90,38 @@ component extends="tests.resources.baseTest" {
                 expect(response.success).toBeTrue();
                 expect(fileExists(uploadDir & '/' & response.filename & '.jpg')).toBeTrue();
                 expect(fileExists(uploadDir & '/' & response.filename & '.webp')).toBeTrue();
+            });
+
+            it('Rotates an upload upright using its EXIF orientation tag when autoOrient is true', () => {
+                // oriented_example.jpg is 300x200 with EXIF Orientation=6 (rotate 90 CW)
+                var uploadDir = newDir();
+                var response  = postUpload(
+                    filePath   = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputs    = [{uploadDir: uploadDir, type: 'jpg'}],
+                    autoOrient = true
+                );
+
+                expect(response.success).toBeTrue();
+                var dimensions = getInstance('Helpers@ImageMagick').getDimensions(
+                    uploadDir & '/' & response.filename & '.jpg'
+                );
+                expect(dimensions.width).toBe(200);
+                expect(dimensions.height).toBe(300);
+            });
+
+            it('Does not rotate an upload when autoOrient is omitted', () => {
+                var uploadDir = newDir();
+                var response  = postUpload(
+                    filePath = expandPath('/tests/resources/oriented_example.jpg'),
+                    outputs  = [{uploadDir: uploadDir, type: 'jpg'}]
+                );
+
+                expect(response.success).toBeTrue();
+                var dimensions = getInstance('Helpers@ImageMagick').getDimensions(
+                    uploadDir & '/' & response.filename & '.jpg'
+                );
+                expect(dimensions.width).toBe(300);
+                expect(dimensions.height).toBe(200);
             });
 
             it('Rejects an upload with a disallowed extension', () => {

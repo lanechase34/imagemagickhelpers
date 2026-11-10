@@ -16,6 +16,11 @@ on:
       - main
   workflow_dispatch:
 
+# Cancel superseded runs on the same branch/PR so stale pushes don't hold runners
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     name: Tests
@@ -44,21 +49,60 @@ jobs:
         with:
           version: latest
 
-      - name: Install ImageMagick
+      - name: Cache CommandBox Downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.CommandBox/artifacts
+            ~/.CommandBox/serverJREs
+          key: commandbox-${{ runner.os }}-${{ matrix.cfengine }}-${{ hashFiles('box.json', format('server-{0}.json', matrix.cfengine)) }}
+          restore-keys: |
+            commandbox-${{ runner.os }}-${{ matrix.cfengine }}-
+
+      - name: Resolve Latest ImageMagick Release
+        id: magick
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          # Pull the official portable ImageMagick 7 AppImage and extract it
-          sudo apt-get update
-          sudo apt-get install -y libfontconfig1 libfreetype6 libx11-6 libharfbuzz0b libfribidi0
+          # Authenticated request avoids the shared-IP rate limit on unauthenticated API calls
+          RELEASE=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/ImageMagick/ImageMagick/releases/latest)
+          echo "tag=$(echo "$RELEASE" | jq -r '.tag_name')" >> "$GITHUB_OUTPUT"
+          echo "url=$(echo "$RELEASE" | jq -r 'first(.assets[] | select(.name | test("gcc-x86_64.AppImage$")) | .browser_download_url)')" >> "$GITHUB_OUTPUT"
 
-          ASSET_URL=$(curl -fsSL https://api.github.com/repos/ImageMagick/ImageMagick/releases/latest \
-            | jq -r '.assets[] | select(.name | test("gcc-x86_64.AppImage$")) | .browser_download_url')
-          curl -fsSL -o /tmp/magick.AppImage "$ASSET_URL"
-          chmod +x /tmp/magick.AppImage
-          (cd /tmp && ./magick.AppImage --appimage-extract >/dev/null)
-          sudo mv /tmp/squashfs-root /usr/local/lib/magick-appimage
-          sudo ln -s /usr/local/lib/magick-appimage/AppRun /usr/local/bin/magick
+      - name: Cache ImageMagick
+        id: magick-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/magick-appimage
+          key: imagemagick-${{ runner.os }}-${{ steps.magick.outputs.tag }}
+
+      - name: Install ImageMagick
+        env:
+          ASSET_URL: ${{ steps.magick.outputs.url }}
+          CACHE_HIT: ${{ steps.magick-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+
+          # Only hit apt when a runtime library is actually missing from the runner image
+          LIBS="libfontconfig1 libfreetype6 libx11-6 libharfbuzz0b libfribidi0"
+          MISSING=$(for LIB in $LIBS; do dpkg -s "$LIB" >/dev/null 2>&1 || echo "$LIB"; done)
+          if [ -n "$MISSING" ]; then
+            sudo apt-get update
+            sudo apt-get install -y $MISSING
+          fi
+
+          # Pull the official portable ImageMagick 7 AppImage and extract it, unless restored from cache
+          if [ "$CACHE_HIT" != "true" ]; then
+            curl -fsSL -o /tmp/magick.AppImage "$ASSET_URL"
+            chmod +x /tmp/magick.AppImage
+            (cd /tmp && ./magick.AppImage --appimage-extract >/dev/null)
+            rm -rf ~/magick-appimage
+            mv /tmp/squashfs-root ~/magick-appimage
+          fi
+          sudo ln -sf ~/magick-appimage/AppRun /usr/local/bin/magick
 
           echo "IMAGEMAGICKPATH=$(command -v magick)" >> "$GITHUB_ENV"
 
@@ -99,7 +143,7 @@ jobs:
             sleep 2
           done
           echo "Server failed to start"
-          box server log
+          box server log serverConfigFile="server-${{ matrix.cfengine }}.json"
           exit 1
 
       - name: Run Tests
@@ -129,21 +173,22 @@ jobs:
           fi
 
       - name: Publish Test Reports
-        uses: mikepenz/action-junit-report@v6.0.1
+        uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
         if: always()
         with:
           report_paths: |
             tests/results/**/*.xml
-          check_name: "TestBox Report ${{ matrix.cfengine }}-${{ matrix.coldboxVersion }}"
+          check_name: "TestBox Report ${{ matrix.cfengine }}"
           include_passed: false
           fail_on_failure: true
+          require_tests: true
           detailed_summary: true
 
       - name: Upload Test Results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: test-results
+          name: test-results-${{ matrix.cfengine }}
           path: |
             tests/results/
             tests/results/*.json
@@ -156,3 +201,9 @@ jobs:
         run: |
           box server stop serverConfigFile="server-${{ matrix.cfengine }}.json"
         continue-on-error: true
+
+      - name: Fail if tests failed
+        if: env.TESTS_FAILED == 'true'
+        run: |
+          echo "TestBox run failed"
+          exit 1

@@ -29,7 +29,8 @@ component singleton {
             path      : variables.pathConstraint,
             outputPath: variables.outputPathConstraint,
             quality   : {type: 'numeric', range: '0..100'},
-            resize    : {type: 'numeric', discrete: 'gt:0'}
+            resize    : {type: 'numeric', discrete: 'gt:0'},
+            autoOrient: {type: 'boolean'}
         },
         crop: {
             path      : variables.pathConstraint,
@@ -81,7 +82,8 @@ component singleton {
                         type: {required: true}
                     }
                 }
-            }
+            },
+            autoOrient: {type: 'boolean'}
         }
     };
 
