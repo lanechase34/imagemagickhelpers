@@ -64,8 +64,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Authenticated request avoids the shared-IP rate limit on unauthenticated API calls
-          RELEASE=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+          # Authenticated request avoids the shared-IP rate limit on unauthenticated API calls.
+          # Token is empty under act unless passed in, and an empty bearer token gets a 401
+          AUTH=()
+          if [ -n "${GH_TOKEN:-}" ]; then
+            AUTH=(-H "Authorization: Bearer $GH_TOKEN")
+          fi
+          RELEASE=$(curl -fsSL "${AUTH[@]}" \
             https://api.github.com/repos/ImageMagick/ImageMagick/releases/latest)
           echo "tag=$(echo "$RELEASE" | jq -r '.tag_name')" >> "$GITHUB_OUTPUT"
           echo "url=$(echo "$RELEASE" | jq -r 'first(.assets[] | select(.name | test("gcc-x86_64.AppImage$")) | .browser_download_url)')" >> "$GITHUB_OUTPUT"
@@ -105,11 +110,14 @@ jobs:
           echo "IMAGEMAGICKPATH=$(command -v magick)" >> "$GITHUB_ENV"
 
           # Fail fast with a clear message if the extracted AppImage is missing delegate
-          # coders, rather than letting it surface later as cryptic per-test failures
+          # coders, rather than letting it surface later as cryptic per-test failures.
+          # Capture the list once - piping magick into grep -q under pipefail flakes when grep exits
+          # early and magick dies of SIGPIPE writing the rest of the list
+          FORMATS=$(magick -list format)
           for FORMAT in JPEG PNG; do
-            if ! magick -list format | grep -qi "^\s*${FORMAT}"; then
+            if ! grep -qi "^\s*${FORMAT}" <<< "$FORMATS"; then
               echo "::error::ImageMagick install is missing the ${FORMAT} delegate coder - the AppImage extraction likely failed or was truncated"
-              magick -list format || true
+              echo "$FORMATS"
               exit 1
             fi
           done
@@ -172,7 +180,8 @@ jobs:
 
       - name: Publish Test Reports
         uses: mikepenz/action-junit-report@e08919a3b1fb83a78393dfb775a9c37f17d8eea6 # v6.0.1
-        if: always()
+        # Skipped under act (sets ACT=true) since there's no GitHub token or check run to publish to locally
+        if: always() && !env.ACT
         with:
           report_paths: |
             tests/results/**/*.xml

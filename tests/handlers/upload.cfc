@@ -10,14 +10,14 @@ component {
         var result = {success: true};
 
         try {
-            var args = {formField: 'file', outputs: structKeyExists(rc, 'outputs') ? deserializeJSON(rc.outputs) : []};
+            var args = {formField: "file", outputs: structKeyExists(rc, "outputs") ? deserializeJSON(rc.outputs) : []};
             for(
                 var name in [
-                    'extensions',
-                    'strip',
-                    'autoOrient',
-                    'maxPixels',
-                    'maxFileSize'
+                    "extensions",
+                    "strip",
+                    "autoOrient",
+                    "maxPixels",
+                    "maxFileSize"
                 ]
             ) {
                 if(structKeyExists(rc, name)) {
@@ -31,9 +31,10 @@ component {
             result.success = false;
             result.type    = e.type;
             result.message = e.message;
+            result.detail  = e.detail;
         }
 
-        event.renderData(type = 'json', data = result);
+        event.renderData(type = "json", data = result);
     }
 
 }

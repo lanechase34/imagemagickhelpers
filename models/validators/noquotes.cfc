@@ -1,7 +1,7 @@
 component singleton {
 
     string function getName() {
-        return 'noQuoteChar';
+        return "noQuoteChar";
     }
 
     /**
@@ -15,7 +15,7 @@ component singleton {
         any validationData,
         struct rules
     ) {
-        if(isNull(arguments.targetValue) || !find('"', arguments.targetValue)) {
+        if(isNull(arguments.targetValue) || !find("""", arguments.targetValue)) {
             return true;
         }
 
@@ -23,10 +23,10 @@ component singleton {
             arguments.validationResult
                 .newError(
                     argumentCollection = {
-                        message       : '#arguments.field# must not contain a double-quote character',
+                        message       : "#arguments.field# must not contain a double-quote character",
                         field         : arguments.field,
                         validationType: getName(),
-                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ''),
+                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ""),
                         validationData: arguments.validationData
                     }
                 )

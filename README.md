@@ -2,14 +2,23 @@
 
 Helper service layer for interacting with ImageMagick in CFML
 
+This is a ColdBox module - it must be installed into a ColdBox application, which provides the WireBox injection, LogBox logging and cbvalidation it relies on.
+
 ## Minimum Requirements
 
+- ColdBox >= 8
 - ImageMagick >= 7
 - Lucee >= 6
-- Adobe ColdFusion >= 2025
+- Adobe ColdFusion >= 2025 (with the `zip` package installed - `cfpm install zip` - which LogBox's RollingFileAppender needs to rotate this module's log file)
 - Boxlang >= 1.15
 
 ## Installation
+
+Install it into your ColdBox application with CommandBox:
+
+```bash
+box install ImageMagickHelpers
+```
 
 Ensure you either set the `IMAGEMAGICKPATH` in your .env to the path of the magick executable **OR** in your ColdBox settings structure
 
@@ -36,10 +45,15 @@ moduleSettings = {
             width : '16KP',
             height: '16KP'
             // time defaults to imageMagickTimeout
-        }
+        },
+        logDirectory      : '/logs' // Directory for the module's own log file, relative to the app root
     }
 };
 ```
+
+## Logging
+
+The module writes its warnings and errors to its own rolling log file, `imagemagickhelpers.log` in `logDirectory`, through your app's LogBox. They are kept out of your app's logs.
 
 See the [ImageMagick `-limit` docs](https://imagemagick.org/script/command-line-options.php#limit) for every resource and unit. Images that need more than `memory` spill over to `map`, then `disk`, before ImageMagick gives up.
 

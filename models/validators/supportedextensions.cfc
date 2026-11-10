@@ -1,7 +1,7 @@
 component singleton {
 
     string function getName() {
-        return 'supportedExtensions';
+        return "supportedExtensions";
     }
 
     /**
@@ -24,10 +24,10 @@ component singleton {
         var supported   = arguments.validationData;
         var unsupported = [];
         if(isSimpleValue(arguments.targetValue)) {
-            unsupported = listToArray(arguments.targetValue, ',').filter((ext) => !listFindNoCase(supported, ext.trim()));
+            unsupported = listToArray(arguments.targetValue, ",").filter((ext) => !listFindNoCase(supported, ext.trim()));
         }
         else {
-            unsupported = ['(not a string)'];
+            unsupported = ["(not a string)"];
         }
 
         if(!unsupported.len()) {
@@ -38,10 +38,10 @@ component singleton {
             arguments.validationResult
                 .newError(
                     argumentCollection = {
-                        message       : '#arguments.field# contains unsupported extension(s) #unsupported.toList(', ')# - supported: #supported#',
+                        message       : "#arguments.field# contains unsupported extension(s) #unsupported.toList(", ")# - supported: #supported#",
                         field         : arguments.field,
                         validationType: getName(),
-                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ''),
+                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ""),
                         validationData: arguments.validationData
                     }
                 )

@@ -23,6 +23,6 @@
         "file":".cfconfig.json"
     },
     "scripts":{
-        "onServerInstall":"cfpm install debugger"
+        "onServerInstall":"cfpm install debugger,zip"
     }
 }

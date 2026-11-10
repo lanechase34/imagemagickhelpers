@@ -1,18 +1,18 @@
 component {
 
-    this.title       = 'Image Magick Helpers';
-    this.author      = 'Chase Lane';
-    this.webURL      = 'https://github.com/lanechase34/imagemagickhelpers';
-    this.description = 'Helpers for interacting with ImageMagick';
+    this.title       = "Image Magick Helpers";
+    this.author      = "Chase Lane";
+    this.webURL      = "https://github.com/lanechase34/imagemagickhelpers";
+    this.description = "Helpers for interacting with ImageMagick";
 
     // Model Namespace
-    this.modelNamespace = 'ImageMagickHelpers';
+    this.modelNamespace = "ImageMagickHelpers";
 
     // CF Mapping
-    this.cfmapping = 'ImageMagickHelpers';
+    this.cfmapping = "ImageMagickHelpers";
 
     // Dependencies - modules that must be loaded and activated before this one
-    this.dependencies = ['cbvalidation'];
+    this.dependencies = ["cbvalidation"];
 
     /**
 	 * Configure Module
@@ -20,41 +20,18 @@ component {
     function configure() {
         settings = {
             cfmlEngine        : getCFMLEngine(),
-            imageMagickPath   : getSystemSetting('IMAGEMAGICKPATH', ''), // Absolute path to the ImageMagick "magick" executable
-            imageMagickTimeout: 30, // Max seconds cfexecute will wait on an ImageMagick call before timing out
+            imageMagickPath   : getSystemSetting("IMAGEMAGICKPATH", ""), // Absolute path to the ImageMagick "magick" executable
+            imageMagickTimeout: 30, // Max seconds an ImageMagick call may run before ImageMagick stops it
             // ImageMagick -limit resource values applied to every call - guards against decompression bombs and runaway conversions
             // "time" defaults to imageMagickTimeout. See https://imagemagick.org/script/command-line-options.php#limit
             imageMagickLimits : {
-                memory: '256MiB',
-                map   : '512MiB',
-                disk  : '1GiB',
-                width : '16KP',
-                height: '16KP'
-            }
-        };
-
-        // Add the image logger
-        logBox = {
-            appenders: {
-                appLog: {
-                    class     : 'coldbox.system.logging.appenders.RollingFileAppender',
-                    properties: {
-                        filePath       : '/logs',
-                        filename       : 'app',
-                        autoExpand     : false,
-                        fileMaxSize    : 10000,
-                        fileMaxArchives: 10,
-                        async          : true
-                    }
-                }
+                memory: "256MiB",
+                map   : "512MiB",
+                disk  : "1GiB",
+                width : "16KP",
+                height: "16KP"
             },
-            categories: {
-                Image: {
-                    levelMin : 'FATAL',
-                    levelMax : 'WARN',
-                    appenders: 'appLog'
-                }
-            }
+            logDirectory: "/logs" // Directory for this module's own log file (imagemagickhelpers.log), relative to the app root
         };
     }
 
@@ -62,24 +39,42 @@ component {
 	 * Fired when the module is registered and activated.
 	 */
     function onLoad() {
+        // Register custom ImageMagickHelpers logger
+        logBox.registerAppender(
+            name       = "ImageMagickHelpers",
+            class      = "coldbox.system.logging.appenders.RollingFileAppender",
+            properties = {
+                filePath       : settings.logDirectory,
+                filename       : "imagemagickhelpers",
+                fileMaxSize    : 10000,
+                fileMaxArchives: 10,
+                async          : true
+            }
+        );
+        logBox
+            .getLogger("ImageMagickHelpers")
+            .addAppender(logBox.getAppenderRegistry()["ImageMagickHelpers"])
+            .setLevelMin(logBox.logLevels.FATAL)
+            .setLevelMax(logBox.logLevels.WARN);
+
         // Injectable service layer
         binder
-            .map(alias = ['Helpers@ImageMagick', '@ImageMagick'], force = true)
-            .to('ImageMagickHelpers.models.services.image')
-            .initArg(name = 'cfmlEngine', value = settings.cfmlEngine)
-            .initArg(name = 'imageMagickPath', value = settings.imageMagickPath)
-            .initArg(name = 'imageMagickTimeout', value = settings.imageMagickTimeout)
-            .initArg(name = 'imageMagickLimits', value = settings.imageMagickLimits);
+            .map(alias = ["Helpers@ImageMagick", "@ImageMagick"], force = true)
+            .to("ImageMagickHelpers.models.services.image")
+            .initArg(name = "cfmlEngine", value = settings.cfmlEngine)
+            .initArg(name = "imageMagickPath", value = settings.imageMagickPath)
+            .initArg(name = "imageMagickTimeout", value = settings.imageMagickTimeout)
+            .initArg(name = "imageMagickLimits", value = settings.imageMagickLimits);
 
         // Custom cbvalidation validators - used internally by service layer
-        binder.map('fileExistsValidator@ImageMagick').to('ImageMagickHelpers.models.validators.fileexists');
-        binder.map('directoryExistsValidator@ImageMagick').to('ImageMagickHelpers.models.validators.directoryexists');
-        binder.map('noQuotesValidator@ImageMagick').to('ImageMagickHelpers.models.validators.noquotes');
-        binder.map('atLeastOneOfValidator@ImageMagick').to('ImageMagickHelpers.models.validators.atleastoneof');
-        binder.map('safePathValidator@ImageMagick').to('ImageMagickHelpers.models.validators.safepath');
+        binder.map("fileExistsValidator@ImageMagick").to("ImageMagickHelpers.models.validators.fileexists");
+        binder.map("directoryExistsValidator@ImageMagick").to("ImageMagickHelpers.models.validators.directoryexists");
+        binder.map("noQuotesValidator@ImageMagick").to("ImageMagickHelpers.models.validators.noquotes");
+        binder.map("atLeastOneOfValidator@ImageMagick").to("ImageMagickHelpers.models.validators.atleastoneof");
+        binder.map("safePathValidator@ImageMagick").to("ImageMagickHelpers.models.validators.safepath");
         binder
-            .map('supportedExtensionsValidator@ImageMagick')
-            .to('ImageMagickHelpers.models.validators.supportedextensions');
+            .map("supportedExtensionsValidator@ImageMagick")
+            .to("ImageMagickHelpers.models.validators.supportedextensions");
     }
 
     /**
@@ -92,16 +87,16 @@ component {
      * Get the current CFML engine
      */
     function getCFMLEngine() {
-        if(server.keyExists('boxlang')) {
-            return 'boxlang';
+        if(server.keyExists("boxlang")) {
+            return "boxlang";
         }
-        else if(server.keyExists('lucee')) {
-            return 'lucee';
+        else if(server.keyExists("lucee")) {
+            return "lucee";
         }
-        else if(server.keyExists('coldfusion')) {
-            return 'coldfusion';
+        else if(server.keyExists("coldfusion")) {
+            return "coldfusion";
         }
-        throw('Invalid CFML engine detected');
+        throw("Invalid CFML engine detected");
     }
 
 }

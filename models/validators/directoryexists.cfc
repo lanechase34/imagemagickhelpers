@@ -3,7 +3,7 @@ component singleton {
     property name="safePath" inject="safePathValidator@ImageMagick";
 
     string function getName() {
-        return 'directoryExists';
+        return "directoryExists";
     }
 
     /**
@@ -28,10 +28,10 @@ component singleton {
                 arguments.validationResult
                     .newError(
                         argumentCollection = {
-                            message       : '#arguments.field# does not exist',
+                            message       : "#arguments.field# does not exist",
                             field         : arguments.field,
                             validationType: getName(),
-                            rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ''),
+                            rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ""),
                             validationData: arguments.validationData
                         }
                     )
@@ -48,10 +48,10 @@ component singleton {
             arguments.validationResult
                 .newError(
                     argumentCollection = {
-                        message       : '#arguments.field# does not exist',
+                        message       : "#arguments.field# does not exist",
                         field         : arguments.field,
                         validationType: getName(),
-                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ''),
+                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ""),
                         validationData: arguments.validationData
                     }
                 )

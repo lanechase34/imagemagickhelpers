@@ -1,7 +1,7 @@
 component singleton {
 
     string function getName() {
-        return 'safePath';
+        return "safePath";
     }
 
     /**
@@ -27,10 +27,10 @@ component singleton {
             arguments.validationResult
                 .newError(
                     argumentCollection = {
-                        message       : '#arguments.field# must not be a network path, pipe, or protocol/coder prefix',
+                        message       : "#arguments.field# must not be a network path, pipe, or protocol/coder prefix",
                         field         : arguments.field,
                         validationType: getName(),
-                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ''),
+                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ""),
                         validationData: arguments.validationData
                     }
                 )
@@ -45,9 +45,9 @@ component singleton {
      * Single-letter Windows drive prefixes ("C:\...") are intentionally allowed through
      */
     boolean function isUnsafePath(required string value) {
-        return reFind('^(\\\\|//)', arguments.value) > 0
-        || reFind('^\|', arguments.value) > 0
-        || reFind('^[A-Za-z][A-Za-z0-9+.-]+:', arguments.value) > 0;
+        return reFind("^(\\\\|//)", arguments.value) > 0
+        || reFind("^\|", arguments.value) > 0
+        || reFind("^[A-Za-z][A-Za-z0-9+.-]+:", arguments.value) > 0;
     }
 
 }

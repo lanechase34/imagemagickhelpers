@@ -1,7 +1,7 @@
 component singleton {
 
     string function getName() {
-        return 'atLeastOneOf';
+        return "atLeastOneOf";
     }
 
     /**
@@ -21,7 +21,7 @@ component singleton {
         var hasThis  = !isNull(arguments.targetValue) && len(arguments.targetValue);
         var otherKey = arguments.validationData.otherField;
 
-        var otherValue = invoke(arguments.target, 'get' & otherKey);
+        var otherValue = invoke(arguments.target, "get" & otherKey);
         var hasOther   = !isNull(otherValue) && len(otherValue);
 
         if(hasThis || hasOther) {
@@ -32,10 +32,10 @@ component singleton {
             arguments.validationResult
                 .newError(
                     argumentCollection = {
-                        message       : 'Must specify #arguments.field#, #otherKey#, or both',
+                        message       : "Must specify #arguments.field#, #otherKey#, or both",
                         field         : arguments.field,
                         validationType: getName(),
-                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ''),
+                        rejectedValue : (isSimpleValue(arguments.targetValue) ? arguments.targetValue : ""),
                         validationData: arguments.validationData
                     }
                 )
