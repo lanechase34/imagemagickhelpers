@@ -9,48 +9,6 @@ component extends="tests.resources.baseTest" {
         super.afterAll();
     }
 
-    /**
-     * POSTs a real multipart upload to the coldbox endpoint to validate the function validateUpload which expects the formfield
-     *
-     * @filePath Full path to the file to upload
-     * @outputs  Array of {uploadDir, type} structs, same shape validateUpload() expects
-     * @fields   (Optional) Struct of optional validateUpload() arguments to post ex: {extensions: 'png', autoOrient: true}
-     */
-    private struct function postUpload(
-        required string filePath,
-        required array outputs,
-        struct fields = {}
-    ) {
-        var uploadUrl = "http://127.0.0.1:60299/tests/index.cfm/upload";
-
-        cfhttp(
-            url     = uploadUrl,
-            method  = "POST",
-            result  = "local.httpResult",
-            timeout = 30
-        ) {
-            cfhttpparam(
-                type  = "formfield",
-                name  = "outputs",
-                value = serializeJSON(arguments.outputs)
-            );
-            for(var name in arguments.fields) {
-                cfhttpparam(
-                    type  = "formfield",
-                    name  = name,
-                    value = arguments.fields[name]
-                );
-            }
-            cfhttpparam(
-                type = "file",
-                name = "file",
-                file = arguments.filePath
-            );
-        }
-
-        return deserializeJSON(httpResult.fileContent);
-    }
-
     function run() {
         describe("validateUpload()", () => {
             beforeEach(() => {
@@ -137,6 +95,83 @@ component extends="tests.resources.baseTest" {
                 var outputPath = uploadDir & "/" & response.filename & ".jpg";
                 expect(getOrientation(outputPath)).toBe("TopLeft");
                 expect(imageService.getDimensions(outputPath)).toBe({width: 200, height: 300});
+            });
+
+            // oriented_example.heic is laid out like an iPhone portrait photo: a 300x200 coded image with an irot
+            // rotation and EXIF Orientation=6. The decoder applies irot, so it's 200x300 with or without autoOrient
+            it("Outputs a rotated HEIC upright, without rotating it twice when autoOrient is true", () => {
+                var uploadDir = newDir();
+                var plain     = postUpload(
+                    filePath = expandPath("/tests/resources/oriented_example.heic"),
+                    outputs  = [{uploadDir: uploadDir, type: "webp"}]
+                );
+                var oriented = postUpload(
+                    filePath = expandPath("/tests/resources/oriented_example.heic"),
+                    outputs  = [{uploadDir: uploadDir, type: "webp"}],
+                    fields   = {autoOrient: true}
+                );
+
+                expect(plain.success).toBeTrue("#plain.message ?: ""# | #plain.detail ?: ""#");
+                expect(oriented.success).toBeTrue("#oriented.message ?: ""# | #oriented.detail ?: ""#");
+                var plainPath    = uploadDir & "/" & plain.filename & ".webp";
+                var orientedPath = uploadDir & "/" & oriented.filename & ".webp";
+                expect(imageService.getDimensions(plainPath)).toBe({width: 200, height: 300});
+                expect(imageService.getDimensions(orientedPath)).toBe({width: 200, height: 300});
+            });
+
+            it("Resets a HEIC's EXIF orientation tag when keeping metadata, so viewers don't rotate it again", () => {
+                var uploadDir = newDir();
+                var response  = postUpload(
+                    filePath = expandPath("/tests/resources/oriented_example.heic"),
+                    outputs  = [{uploadDir: uploadDir, type: "jpg"}],
+                    fields   = {strip: false, autoOrient: true}
+                );
+
+                expect(response.success).toBeTrue("#response.message ?: ""# | #response.detail ?: ""#");
+                var outputPath = uploadDir & "/" & response.filename & ".jpg";
+                expect(getOrientation(outputPath)).toBe("TopLeft");
+                expect(imageService.getDimensions(outputPath)).toBe({width: 200, height: 300});
+            });
+
+            it("Passes quality and resize through to each conversion", () => {
+                // png_example.png is 510x361
+                var uploadDir = newDir();
+                var low       = postUpload(
+                    filePath = expandPath("/tests/resources/png_example.png"),
+                    outputs  = [{uploadDir: uploadDir, type: "jpg"}],
+                    fields   = {quality: 10, resize: 100}
+                );
+                var high = postUpload(
+                    filePath = expandPath("/tests/resources/png_example.png"),
+                    outputs  = [{uploadDir: uploadDir, type: "jpg"}],
+                    fields   = {quality: 90, resize: 100}
+                );
+
+                expect(low.success).toBeTrue("#low.message ?: ""# | #low.detail ?: ""#");
+                expect(high.success).toBeTrue("#high.message ?: ""# | #high.detail ?: ""#");
+                var lowPath  = uploadDir & "/" & low.filename & ".jpg";
+                var highPath = uploadDir & "/" & high.filename & ".jpg";
+                expect(imageService.getDimensions(lowPath)).toBe({width: 100, height: 71});
+                expect(getFileInfo(lowPath).size).toBeLT(getFileInfo(highPath).size);
+            });
+
+            it("Keeps only the first frame of an animated upload", () => {
+                // animated_example.gif has two 40x30 frames - a jpg output would otherwise be written as one file per frame
+                expect(getFrameCount(expandPath("/tests/resources/animated_example.gif"))).toBe(2);
+                var uploadDir = newDir();
+                var response  = postUpload(
+                    filePath = expandPath("/tests/resources/animated_example.gif"),
+                    outputs  = [
+                        {uploadDir: uploadDir, type: "gif"},
+                        {uploadDir: uploadDir, type: "jpg"}
+                    ],
+                    fields = {extensions: "gif"}
+                );
+
+                expect(response.success).toBeTrue("#response.message ?: ""# | #response.detail ?: ""#");
+                expect(directoryList(uploadDir, false, "name").len()).toBe(2);
+                expect(getFrameCount(uploadDir & "/" & response.filename & ".gif")).toBe(1);
+                expect(imageService.getDimensions(uploadDir & "/" & response.filename & ".jpg")).toBe({width: 40, height: 30});
             });
 
             it("Rejects an upload with a disallowed extension", () => {

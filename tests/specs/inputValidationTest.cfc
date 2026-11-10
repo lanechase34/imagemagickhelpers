@@ -175,6 +175,65 @@ component extends="tests.resources.baseTest" {
             });
         });
 
+        describe("Quality and pixel dimensions", () => {
+            // 0 is ImageMagick's "undefined" quality, which writes at its default (ex: 92 for JPEG) instead of the lowest
+            [0, 101].each((quality) => {
+                it(
+                    title = "Rejects a quality of #quality#",
+                    data  = {quality: quality},
+                    body  = (data) => {
+                        expect(() => imageService.convert(
+                            path       = validImage,
+                            outputPath = tempDir & "/out.jpg",
+                            quality    = data.quality
+                        )).toThrow("ImageMagick.InputValidationException");
+                        expect(() => imageService.validateUpload(
+                            formField = "file",
+                            outputs   = [{uploadDir: tempDir, type: "jpg"}],
+                            quality   = data.quality
+                        )).toThrow("ImageMagick.InputValidationException");
+                    }
+                );
+            });
+
+            // Under 1px can't be sized to
+            [0, 0.5, -1].each((size) => {
+                it(
+                    title = "Rejects a width, height, or resize of #size#",
+                    data  = {size: size},
+                    body  = (data) => {
+                        expect(() => imageService.convert(
+                            path       = validImage,
+                            outputPath = tempDir & "/out.jpg",
+                            resize     = data.size
+                        )).toThrow("ImageMagick.InputValidationException");
+                        expect(() => imageService.validateUpload(
+                            formField = "file",
+                            outputs   = [{uploadDir: tempDir, type: "jpg"}],
+                            resize    = data.size
+                        )).toThrow("ImageMagick.InputValidationException");
+                        expect(() => imageService.crop(
+                            path       = validImage,
+                            outputPath = tempDir & "/out.jpg",
+                            width      = data.size,
+                            height     = 100
+                        )).toThrow("ImageMagick.InputValidationException");
+                        expect(() => imageService.crop(
+                            path       = validImage,
+                            outputPath = tempDir & "/out.jpg",
+                            width      = 100,
+                            height     = data.size
+                        )).toThrow("ImageMagick.InputValidationException");
+                        expect(() => imageService.resize(path = validImage, outputs = [{resizeDir: tempDir, width: data.size}])).toThrow("ImageMagick.InputValidationException");
+                        expect(() => imageService.resize(
+                            path    = validImage,
+                            outputs = [{resizeDir: tempDir, height: data.size}]
+                        )).toThrow("ImageMagick.InputValidationException");
+                    }
+                );
+            });
+        });
+
         describe("Duplicate outputs", () => {
             it("Rejects two resize outputs sharing a resizeDir, which would overwrite each other", () => {
                 expect(() => imageService.resize(
@@ -192,6 +251,23 @@ component extends="tests.resources.baseTest" {
                     outputs   = [
                         {uploadDir: tempDir, type: "jpg"},
                         {uploadDir: tempDir, type: "JPG"}
+                    ]
+                )).toThrow("ImageMagick.InputValidationException");
+            });
+
+            it("Rejects two outputs whose directories are the same directory spelled differently", () => {
+                expect(() => imageService.validateUpload(
+                    formField = "file",
+                    outputs   = [
+                        {uploadDir: tempDir, type: "jpg"},
+                        {uploadDir: tempDir & "/.", type: "jpg"}
+                    ]
+                )).toThrow("ImageMagick.InputValidationException");
+                expect(() => imageService.resize(
+                    path    = validImage,
+                    outputs = [
+                        {resizeDir: tempDir, width: 10},
+                        {resizeDir: tempDir & "/../" & listLast(tempDir, "/\"), height: 10}
                     ]
                 )).toThrow("ImageMagick.InputValidationException");
             });

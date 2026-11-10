@@ -17,7 +17,9 @@ component {
                     "strip",
                     "autoOrient",
                     "maxPixels",
-                    "maxFileSize"
+                    "maxFileSize",
+                    "quality",
+                    "resize"
                 ]
             ) {
                 if(structKeyExists(rc, name)) {

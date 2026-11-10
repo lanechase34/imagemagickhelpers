@@ -116,7 +116,7 @@ component extends="tests.resources.baseTest" {
                 )).toThrow("ImageMagick.InputValidationException");
             });
 
-            it("Throws when an output width or height is not positive", () => {
+            it("Throws when an output width or height is under 1px", () => {
                 expect(() => imageService.resize(
                     path    = expandPath("/tests/resources/jpg_example.jpg"),
                     outputs = [{resizeDir: newDir(), width: 0}]

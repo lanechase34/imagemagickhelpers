@@ -12,4 +12,5 @@
 *.jpeg binary
 *.png binary
 *.heic binary
+*.gif binary
 *.webp binary

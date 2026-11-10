@@ -84,7 +84,7 @@ component extends="tests.resources.baseTest" {
                 expect(getOrientation(outputPath)).toBe("TopLeft");
             });
 
-            it("Throws for a non-positive width or height", () => {
+            it("Throws for a width or height under 1px", () => {
                 expect(() => imageService.crop(
                     path       = expandPath("/tests/resources/jpg_example.jpg"),
                     outputPath = tempDir & "/out.jpg",

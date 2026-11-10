@@ -144,12 +144,12 @@ component singleton accessors="true" {
      *
      * @path       Full path to source image
      * @outputPath Full path to output file including extension, which determines its format
-     * @quality    (Optional) 0-100 quality of image, defaults to 50
+     * @quality    (Optional) 1-100 quality of image, defaults to 50
      * @resize     (Optional) Max width/height in pixels to shrink to, defaults to 1200
      * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
      * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag, defaults to false
      *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 0 and 100, or resize is not a positive number
+     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, quality is not between 1 and 100, or resize is less than 1
      * @throws ImageMagick.ConversionException      When ImageMagick fails to produce the converted output
      */
     public void function convert(
@@ -199,7 +199,7 @@ component singleton accessors="true" {
      * @strip      (Optional) Whether to strip metadata (EXIF, ICC profiles, etc) from the image, defaults to true
      * @autoOrient (Optional) Physically rotate/flip the image upright using its EXIF orientation tag before cropping, defaults to false
      *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, or width/height is not a positive number
+     * @throws ImageMagick.InputValidationException When path does not exist, outputPath is empty, or width/height is less than 1
      * @throws ImageMagick.CropException            When ImageMagick fails to produce the cropped output
      */
     public void function crop(
@@ -273,7 +273,7 @@ component singleton accessors="true" {
      *
      * @return Array of full paths to the resized output files, in outputs order
      *
-     * @throws ImageMagick.InputValidationException When path does not exist, outputs is empty, two outputs share a resizeDir, or an output entry is missing resizeDir, is missing both width and height, or has a non-positive width/height
+     * @throws ImageMagick.InputValidationException When path does not exist, outputs is empty, two outputs share a resizeDir, or an output entry is missing resizeDir, is missing both width and height, or has a width/height less than 1
      * @throws ImageMagick.ResizeException          When ImageMagick fails to produce one of the resized outputs
      */
     public array function resize(
@@ -340,7 +340,7 @@ component singleton accessors="true" {
      *
      * 1. Upload it to its own temp directory, check its extension and file size, and rename it to a UUID
      * 2. Read its header to check it's a real image of the type its extension claims, within maxPixels
-     * 3. Convert it to every output from a single decode, all named with the same new UUID
+     * 3. Convert its first frame to every output from a single decode, all named with the same new UUID
      *
      * The temp directory is always removed. If any output fails, no output is written.
      *
@@ -351,10 +351,12 @@ component singleton accessors="true" {
      * @autoOrient  (Optional) Rotate/flip each output upright using the upload's EXIF orientation tag, defaults to false
      * @maxPixels   (Optional) Max width x height of the upload in pixels, defaults to 100000000 (100 megapixels)
      * @maxFileSize (Optional) Max size of the uploaded file in bytes, defaults to 26214400 (25MB)
+     * @quality     (Optional) 1-100 quality of each output, defaults to 50
+     * @resize      (Optional) Max width/height in pixels to shrink each output to, defaults to 1200
      *
      * @return The converted files' shared UUID filename (without extension)
      *
-     * @throws ImageMagick.InputValidationException  When formField is empty, outputs is empty, an output entry is missing uploadDir or type, two outputs share an uploadDir and type, an extension or type is not supported, or maxPixels/maxFileSize is not a positive number
+     * @throws ImageMagick.InputValidationException  When formField is empty, outputs is empty, an output entry is missing uploadDir or type, two outputs share an uploadDir and type, an extension or type is not supported, maxPixels/maxFileSize is not a positive number, resize is less than 1, or quality is not between 1 and 100
      * @throws ImageMagick.UploadValidationException When no file is uploaded, the upload's extension is not in extensions, it exceeds maxFileSize, it is not a valid image, its content does not match its extension, it exceeds maxPixels, or an output fails to convert
      */
     public string function validateUpload(
@@ -364,7 +366,9 @@ component singleton accessors="true" {
         boolean strip       = true,
         boolean autoOrient  = false,
         numeric maxPixels   = 100000000,
-        numeric maxFileSize = 26214400
+        numeric maxFileSize = 26214400,
+        numeric quality     = 50,
+        numeric resize      = 1200
     ) {
         validateArgs("validateUpload", arguments);
 
@@ -393,6 +397,8 @@ component singleton accessors="true" {
                 path        = tempPath,
                 source      = source,
                 outputPaths = outputPaths,
+                quality     = arguments.quality,
+                resize      = arguments.resize,
                 strip       = arguments.strip,
                 autoOrient  = arguments.autoOrient
             );
@@ -440,8 +446,14 @@ component singleton accessors="true" {
             uploadArgs.onConflict = "makeUnique";
         }
         else {
-            uploadArgs.mimeType     = mimeTypes;
             uploadArgs.nameConflict = "makeUnique";
+        }
+
+        // BoxLang takes an upload's MIME type from Java's guess by file extension, which has none for some image types
+        // (ex: .heic) - so it would reject them. The extension and the content ImageMagick detects are checked below instead
+        if(getCfmlEngine() == "coldfusion") {
+            uploadArgs.accept   = mimeTypes;
+            uploadArgs.mimeType = mimeTypes;
         }
 
         // Result must be local - this service is a singleton, so an unscoped result would be shared across concurrent requests
@@ -450,7 +462,6 @@ component singleton accessors="true" {
             cffile(
                 action              = "upload",
                 attributeCollection = uploadArgs,
-                accept              = mimeTypes,
                 result              = "local.upload"
             );
         }
@@ -524,10 +535,15 @@ component singleton accessors="true" {
     /**
      * Step 3 - convert the upload to every output from a single decode
      * A corrupt image body that passed the header read in step 2 fails here
+     * Only the first frame is read - the one step 2 checked against maxPixels - so an animated or multi-image upload
+     * can't decode more than that, and every output is a single image (a single-frame format would otherwise be
+     * written as one numbered file per frame)
      *
      * @path        Full path to the renamed upload
      * @source      Upload's header info from step 2 ex: {format: 'JPEG', width: 4032, height: 3024}
      * @outputPaths Full paths to write, the format of each is determined by its extension
+     * @quality     1-100 quality of each output
+     * @resize      Max width/height in pixels to shrink each output to
      * @strip       Whether to strip metadata
      * @autoOrient  Whether to rotate/flip the image upright using its EXIF orientation tag
      *
@@ -537,6 +553,8 @@ component singleton accessors="true" {
         required string path,
         required struct source,
         required array outputPaths,
+        required numeric quality,
+        required numeric resize,
         required boolean strip,
         required boolean autoOrient
     ) {
@@ -545,11 +563,11 @@ component singleton accessors="true" {
         try {
             writeOutputs(
                 commandArgs = buildConvertArgs(
-                    path        = arguments.path,
+                    path        = "#arguments.path#[0]",
                     source      = arguments.source,
                     outputPaths = temp.paths,
-                    quality     = 50,
-                    resize      = 1200,
+                    quality     = arguments.quality,
+                    resize      = arguments.resize,
                     strip       = arguments.strip,
                     autoOrient  = arguments.autoOrient
                 ),
@@ -830,7 +848,7 @@ component singleton accessors="true" {
      * @path        Full path to source image
      * @source      Source's header info ex: {format: 'JPEG', width: 4032, height: 3024}
      * @outputPaths Full paths to write, the format of each is determined by its extension
-     * @quality     0-100 quality of image
+     * @quality     1-100 quality of image
      * @resize      Max width/height in pixels to shrink to
      * @strip       Whether to strip metadata
      * @autoOrient  Whether to rotate/flip the image upright using its EXIF orientation tag
@@ -979,6 +997,7 @@ component singleton accessors="true" {
 
     /**
      * Throw when two outputs would be written to the same path - the later one would silently overwrite the earlier
+     * Compared as canonical paths, so differently spelled paths to the same file match (ex: /images/. and /images)
      * Compared case-insensitively since struct keys are, which also catches same-directory differences in case on Windows
      *
      * @outputPaths Full output paths about to be written
@@ -989,7 +1008,7 @@ component singleton accessors="true" {
     private void function ensureUniqueOutputs(required array outputPaths, required string message) {
         var seen = {};
         arguments.outputPaths.each((outputPath) => {
-            seen[outputPath] = true;
+            seen[createObject("java", "java.io.File").init(outputPath).getCanonicalPath()] = true;
         });
 
         if(structCount(seen) != arguments.outputPaths.len()) {

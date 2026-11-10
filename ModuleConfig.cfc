@@ -31,7 +31,10 @@ component {
                 width : "16KP",
                 height: "16KP"
             },
-            logDirectory: "/logs" // Directory for this module's own log file (imagemagickhelpers.log), relative to the app root
+            logDirectory      : "/logs", // Directory for this module's own log file (imagemagickhelpers.log)
+            // Whether logDirectory is run through expandPath(), ex: "/logs" under the web root -
+            // set false for an absolute path, which expandPath() would also resolve under the web root
+            expandLogDirectory: true
         };
     }
 
@@ -45,6 +48,7 @@ component {
             class      = "coldbox.system.logging.appenders.RollingFileAppender",
             properties = {
                 filePath       : settings.logDirectory,
+                autoExpand     : settings.expandLogDirectory,
                 filename       : "imagemagickhelpers",
                 fileMaxSize    : 10000,
                 fileMaxArchives: 10,

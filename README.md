@@ -46,16 +46,36 @@ moduleSettings = {
             height: '16KP'
             // time defaults to imageMagickTimeout
         },
-        logDirectory      : '/logs' // Directory for the module's own log file, relative to the app root
+        logDirectory      : '/logs', // Directory for the module's own log file
+        expandLogDirectory: true // Whether logDirectory is run through expandPath() - set false for an absolute path
     }
 };
 ```
+
+See the [ImageMagick `-limit` docs](https://imagemagick.org/script/command-line-options.php#limit) for every resource and unit. Images that need more than `memory` spill over to `map`, then `disk`, before ImageMagick gives up.
+
+If your ColdBox config's environment methods (ex: `development()`) set `moduleSettings`, add to it (`moduleSettings.ImageMagickHelpers = {...}`) rather than assigning a new struct, or they replace the settings from `configure()`.
 
 ## Logging
 
 The module writes its warnings and errors to its own rolling log file, `imagemagickhelpers.log` in `logDirectory`, through your app's LogBox. They are kept out of your app's logs.
 
-See the [ImageMagick `-limit` docs](https://imagemagick.org/script/command-line-options.php#limit) for every resource and unit. Images that need more than `memory` spill over to `map`, then `disk`, before ImageMagick gives up.
+By default `logDirectory` is run through `expandPath()`, so `/logs` is the `logs` folder under your web root. To keep the log next to your app's own log files instead, set `logDirectory` to that directory's absolute path and `expandLogDirectory` to `false` - `expandPath()` would otherwise resolve the absolute path under the web root too:
+
+```cfc
+moduleSettings = {
+    ImageMagickHelpers: {
+        logDirectory      : '/var/log/myapp',
+        expandLogDirectory: false
+    }
+};
+```
+
+## Supported Formats
+
+Sources and outputs can be `png`, `jpg`, `jpeg`, `webp`, `heic`, `gif`, `bmp`, `tif`, `tiff`, `svg`, `avif`, or `ico` - as long as your ImageMagick build has the delegate for that format. Run `magick -list format` to check: the mode column shows `r` for formats it can read and `w` for formats it can write.
+
+Many builds can read HEIC but not write it. Convert HEIC sources (ex: iPhone photos) to a format like `webp` or `jpg` - `resize()` writes each output in its source's format, so it can only resize a HEIC source when your build can write HEIC.
 
 ## Usage
 
@@ -109,7 +129,7 @@ function uploadPhoto(event, rc, prc) {
 }
 ```
 
-Each upload is handled in its own UUID-named temp directory under a UUID filename, checked against its extension, a file size limit (`maxFileSize`, 25MB by default), and a pixel limit (`maxPixels`, 100 megapixels by default) before it's ever decoded, and converted to every output from a single decode. A rejected upload throws `ImageMagick.UploadValidationException` with a `message` safe to show your users, and the technical cause in its `detail`.
+Each upload is handled in its own UUID-named temp directory under a UUID filename, checked against its extension, a file size limit (`maxFileSize`, 25MB by default), and a pixel limit (`maxPixels`, 100 megapixels by default) before it's ever decoded, and converted to every output from a single decode - at `quality` (50 by default), shrunk to fit `resize` (1200px by default). Set those to the final size you need instead of running `convert()` on the output afterwards, which would lose quality to a second lossy save. Only the first frame of an animated or multi-image upload is kept. A rejected upload throws `ImageMagick.UploadValidationException` with a `message` safe to show your users, and the technical cause in its `detail`.
 
 Every function validates its arguments and throws a typed `ImageMagick.*Exception` (e.g. `ImageMagick.ConversionException`, `ImageMagick.UploadValidationException`) on failure - wrap calls in `try`/`catch` where you need to handle those.
 

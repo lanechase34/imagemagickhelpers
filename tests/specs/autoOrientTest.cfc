@@ -30,6 +30,21 @@ component extends="tests.resources.baseTest" {
                 expect(dimensions.height).toBe(300);
             });
 
+            it("Does not rotate a HEIC twice - the HEIC decoder already applies its rotation", () => {
+                var outputPath = tempDir & "/" & createUUID() & ".jpg";
+
+                // oriented_example.heic is laid out like an iPhone portrait photo: a 300x200 coded image with an irot
+                // rotation and EXIF Orientation=6. The decoder applies irot, so a second turn from the EXIF tag
+                // would leave it sideways at 300x200
+                imageService.autoOrient(
+                    path       = expandPath("/tests/resources/oriented_example.heic"),
+                    outputPath = outputPath
+                );
+
+                expect(imageService.getDimensions(outputPath)).toBe({width: 200, height: 300});
+                expect(getOrientation(outputPath)).toBe("TopLeft");
+            });
+
             it("Leaves an image with no EXIF orientation tag dimensionally unchanged", () => {
                 var outputPath = tempDir & "/" & createUUID() & ".png";
 

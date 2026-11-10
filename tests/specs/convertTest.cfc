@@ -127,7 +127,7 @@ component extends="tests.resources.baseTest" {
                 expect(dimensions.height).toBe(300);
             });
 
-            it("Throws for a quality outside the 0-100 range", () => {
+            it("Throws for a quality outside the 1-100 range", () => {
                 expect(() => imageService.convert(
                     path       = expandPath("/tests/resources/jpg_example.jpg"),
                     outputPath = tempDir & "/out.jpg",
@@ -135,7 +135,7 @@ component extends="tests.resources.baseTest" {
                 )).toThrow("ImageMagick.InputValidationException");
             });
 
-            it("Throws for a non-positive resize", () => {
+            it("Throws for a resize under 1px", () => {
                 expect(() => imageService.convert(
                     path       = expandPath("/tests/resources/jpg_example.jpg"),
                     outputPath = tempDir & "/out.jpg",

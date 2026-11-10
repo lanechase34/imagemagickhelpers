@@ -25,10 +25,17 @@ component singleton {
     // Every extension the service can map to a mime type and detected format
     variables.supportedExtensions = "png,jpg,jpeg,webp,heic,gif,bmp,tif,tiff,svg,avif,ico";
 
-    variables.positiveNumericConstraint = {
+    variables.positiveNumericConstraint = {type: "numeric", discrete: "gt:0"};
+
+    // 0 is ImageMagick's "undefined" quality, which falls back to its default (ex: 92 for JPEG) - so the lowest is 1
+    variables.qualityConstraint = {type: "numeric", range: "1..100"};
+
+    // Width/height in pixels - ImageMagick can't size an image to less than 1px
+    variables.dimensionConstraint         = {type: "numeric", discrete: "gte:1"};
+    variables.requiredDimensionConstraint = {
         required: true,
         type    : "numeric",
-        discrete: "gt:0"
+        discrete: "gte:1"
     };
 
     // Rules defined by the function's name
@@ -38,16 +45,16 @@ component singleton {
         convert      : {
             path      : variables.pathConstraint,
             outputPath: variables.outputPathConstraint,
-            quality   : {type: "numeric", range: "0..100"},
-            resize    : {type: "numeric", discrete: "gt:0"},
+            quality   : variables.qualityConstraint,
+            resize    : variables.dimensionConstraint,
             strip     : {type: "boolean"},
             autoOrient: {type: "boolean"}
         },
         crop: {
             path      : variables.pathConstraint,
             outputPath: variables.outputPathConstraint,
-            width     : variables.positiveNumericConstraint,
-            height    : variables.positiveNumericConstraint,
+            width     : variables.requiredDimensionConstraint,
+            height    : variables.requiredDimensionConstraint,
             strip     : {type: "boolean"},
             autoOrient: {type: "boolean"}
         },
@@ -67,9 +74,9 @@ component singleton {
                         width    : {
                             "atLeastOneOfValidator@ImageMagick": {otherField: "height"},
                             type                               : "numeric",
-                            discrete                           : "gt:0"
+                            discrete                           : "gte:1"
                         },
-                        height: {type: "numeric", discrete: "gt:0"}
+                        height: variables.dimensionConstraint
                     }
                 }
             }
@@ -79,8 +86,10 @@ component singleton {
             extensions : {required: true, "supportedExtensionsValidator@ImageMagick": variables.supportedExtensions},
             strip      : {type: "boolean"},
             autoOrient : {type: "boolean"},
-            maxPixels  : {type: "numeric", discrete: "gt:0"},
-            maxFileSize: {type: "numeric", discrete: "gt:0"},
+            maxPixels  : variables.positiveNumericConstraint,
+            maxFileSize: variables.positiveNumericConstraint,
+            quality    : variables.qualityConstraint,
+            resize     : variables.dimensionConstraint,
             outputs    : {
                 required : true,
                 type     : "array",

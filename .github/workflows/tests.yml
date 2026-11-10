@@ -114,7 +114,7 @@ jobs:
           # Capture the list once - piping magick into grep -q under pipefail flakes when grep exits
           # early and magick dies of SIGPIPE writing the rest of the list
           FORMATS=$(magick -list format)
-          for FORMAT in JPEG PNG; do
+          for FORMAT in JPEG PNG WEBP GIF HEIC; do
             if ! grep -qi "^\s*${FORMAT}" <<< "$FORMATS"; then
               echo "::error::ImageMagick install is missing the ${FORMAT} delegate coder - the AppImage extraction likely failed or was truncated"
               echo "$FORMATS"

@@ -23,6 +23,15 @@ component extends="tests.resources.baseTest" {
                 // A logger with its own appenders never passes messages on to the app's root logger
                 expect(imageLog.getAppenders().keyList()).toBe("ImageMagickHelpers");
             });
+
+            it("Writes to logDirectory, expanding it only when expandLogDirectory is true", () => {
+                var settings = getInstance(dsl = "coldbox:moduleSettings:imagemagickhelpers");
+                var appender = getController().getLogBox().getAppenderRegistry()["ImageMagickHelpers"];
+
+                expect(appender.getProperty("filePath")).toBe(settings.logDirectory);
+                expect(appender.getProperty("autoExpand")).toBe(settings.expandLogDirectory);
+                expect(settings.expandLogDirectory).toBeTrue();
+            });
         });
     }
 
