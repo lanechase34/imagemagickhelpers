@@ -92,26 +92,6 @@ component extends="coldbox.system.testing.BaseTestCase" appMapping="root" {
     }
 
     /**
-     * Whether the configured ImageMagick build can write format - ex: many builds read HEIC but can't write it
-     *
-     * @format ImageMagick format name ex: 'HEIC'
-     */
-    public boolean function canWrite(required string format) {
-        var result = "";
-
-        cfexecute(
-            name      = getInstance("Helpers@ImageMagick").getImageMagickPath(),
-            arguments = ["-list", "format"],
-            variable  = "local.result",
-            timeout   = 30
-        );
-
-        // Each line is the format, an optional * for native blob support, its module, then its mode
-        // ex: "     HEIC  HEIC      r--   High Efficiency Image Format"
-        return reFindNoCase("(^|\n)\s*#arguments.format#\*?\s+\S+\s+rw", result) > 0;
-    }
-
-    /**
      * POSTs a real multipart upload to the coldbox endpoint to validate the function validateUpload which expects the formfield
      *
      * @filePath Full path to the file to upload

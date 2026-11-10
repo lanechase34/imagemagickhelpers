@@ -122,6 +122,17 @@ jobs:
             fi
           done
 
+          # Listing a coder doesn't mean it can encode - many builds read HEIC but can't write it.
+          # The tests resize HEIC sources in their own format, so require a real write of each
+          for FORMAT in JPEG PNG WEBP GIF HEIC; do
+            PROBE="/tmp/magick-probe.$(echo "$FORMAT" | tr '[:upper:]' '[:lower:]')"
+            if ! magick -size 16x16 xc:white "${FORMAT}:${PROBE}" || [ ! -s "$PROBE" ]; then
+              echo "::error::ImageMagick install can't write ${FORMAT} - the build is missing its encoder"
+              exit 1
+            fi
+            rm -f "$PROBE"
+          done
+
       - name: Setup Environment For Testing Process
         run: |
           cat > .env << 'EOL'

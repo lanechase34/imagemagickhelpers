@@ -56,7 +56,11 @@ component extends="tests.resources.baseTest" {
         ];
 
         // Output types every source is converted to, and the format ImageMagick should detect for each
-        var outputFormats = {jpg: "JPEG", png: "PNG", webp: "WEBP"};
+        var outputFormats = {
+            "jpg" : "JPEG",
+            "png" : "PNG",
+            "webp": "WEBP"
+        };
 
         sources.each((source) => {
             var spec           = duplicate(source);
@@ -129,7 +133,8 @@ component extends="tests.resources.baseTest" {
                     title = "resize() writes it by width and by height, in its own format",
                     data  = spec,
                     body  = (data) => {
-                        var runResize = () => imageService.resize(
+                        // resize() keeps the source's filename and so its format - CI requires a build that can write each one
+                        var results = imageService.resize(
                             path    = expandPath("/tests/resources/#data.file#"),
                             outputs = [
                                 {resizeDir: newDir(), width: 100},
@@ -137,13 +142,6 @@ component extends="tests.resources.baseTest" {
                             ]
                         );
 
-                        // resize() keeps the source's filename and so its format - a build that can't write it fails
-                        if(!canWrite(data.format)) {
-                            expect(runResize).toThrow("ImageMagick.ResizeException");
-                            return;
-                        }
-
-                        var results = runResize();
                         expect(imageService.identify(results[1])).toBe(data.format);
                         expect(imageService.getDimensions(results[1])).toBe(data.byWidth);
                         expect(imageService.getDimensions(results[2])).toBe(data.byHeight);
